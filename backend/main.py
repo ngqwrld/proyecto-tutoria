@@ -9,41 +9,47 @@ model = YOLO("yolo11n.pt")
 
 @app.get("/")
 def inicio():
-    return {
-        "mensaje": "Servidor de tutoria funcionando"
-    }
+    return {"mensaje": "Servidor de tutoria funcionando"}
 
 
 @app.get("/health")
 def health():
-    return {
-        "estado": "ok"
-    }
+    return {"estado": "ok"}
 
 
-def calcular_iou(box1, box2):
+def punto_en_silla(person_box, chair_box):
     """
-    Calcula cuánto se superponen dos cajas.
+    Comprueba si la parte inferior de una persona
+    está dentro de la zona de una silla.
+
+    person_box = [x1, y1, x2, y2]
+    chair_box = [x1, y1, x2, y2]
     """
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    x2 = min(box1[2], box2[2])
-    y2 = min(box1[3], box2[3])
 
-    ancho = max(0, x2 - x1)
-    alto = max(0, y2 - y1)
+    px1, py1, px2, py2 = person_box
+    cx1, cy1, cx2, cy2 = chair_box
 
-    interseccion = ancho * alto
+    # Punto usado: centro de la parte inferior
+    punto_x = (px1 + px2) / 2
+    punto_y = py2
 
-    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
-    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    # Ampliamos ligeramente la zona de la silla
+    ancho = cx2 - cx1
+    alto = cy2 - cy1
 
-    union = area1 + area2 - interseccion
+    margen_x = ancho * 0.25
+    margen_y = alto * 0.50
 
-    if union == 0:
-        return 0
+    cx1_ampliado = cx1 - margen_x
+    cx2_ampliado = cx2 + margen_x
+    cy1_ampliado = cy1 - margen_y
+    cy2_ampliado = cy2 + margen_y
 
-    return interseccion / union
+    return (
+        cx1_ampliado <= punto_x <= cx2_ampliado
+        and
+        cy1_ampliado <= punto_y <= cy2_ampliado
+    )
 
 
 @app.post("/predict")
@@ -60,11 +66,11 @@ async def predict(file: UploadFile = File(...)):
     chairs = []
 
     for result in results:
+
         for box in result.boxes:
 
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
-
             coordinates = box.xyxy[0].tolist()
 
             # Persona
@@ -81,38 +87,49 @@ async def predict(file: UploadFile = File(...)):
                     "confidence": confidence
                 })
 
-    # Determinar sillas ocupadas
+    # -----------------------------------
+    # DETERMINAR SILLAS OCUPADAS
+    # -----------------------------------
+
     occupied_chairs = 0
 
     for chair in chairs:
 
         chair_box = chair["box"]
+
         silla_ocupada = False
 
         for person in people:
 
             person_box = person["box"]
 
-            iou = calcular_iou(chair_box, person_box)
-
-            # Si la persona se superpone suficientemente
-            # con la silla, consideramos que está ocupada.
-            if iou >= 0.10:
+            if punto_en_silla(person_box, chair_box):
                 silla_ocupada = True
                 break
 
         if silla_ocupada:
             occupied_chairs += 1
 
-    free_chairs = len(chairs) - occupied_chairs
+    # -----------------------------------
+    # RESULTADOS
+    # -----------------------------------
 
-    # Eliminar imagen temporal
+    total_chairs = len(chairs)
+
+    free_chairs = total_chairs - occupied_chairs
+
+    # IMPORTANTE:
+    # No usamos el número bruto de personas detectadas
+    # por YOLO porque puede detectar personas que no
+    # están ocupando una silla.
+    people_count = occupied_chairs
+
     if os.path.exists("temp.jpg"):
         os.remove("temp.jpg")
 
     return {
-        "personas": len(people),
-        "sillas": len(chairs),
+        "personas": people_count,
+        "sillas": total_chairs,
         "ocupadas": occupied_chairs,
         "libres": free_chairs
     }
