@@ -19,7 +19,7 @@ app = FastAPI()
 # Modelo ligero
 model = YOLO("yolo11n.pt")
 
-# Evita dos análisis simultáneos y un aumento innecesario de RAM
+# Evita dos análisis simultáneos
 prediction_lock = asyncio.Lock()
 
 
@@ -67,7 +67,6 @@ def punto_en_silla(person_box, chair_box):
 def analizar_imagen(imagen):
     """
     Ejecuta YOLO y devuelve solamente los datos necesarios.
-    No conserva el objeto completo de resultados.
     """
 
     with torch.inference_mode():
@@ -128,10 +127,10 @@ def analizar_imagen(imagen):
             if silla_ocupada:
                 occupied_chairs += 1
 
-        # IMPORTANTE:
-        # Las personas se cuentan directamente.
+        # Las personas se cuentan directamente
         people_count = len(people)
 
+        # Las sillas se detectan dinámicamente
         total_chairs = len(chairs)
 
         free_chairs = max(
@@ -139,6 +138,7 @@ def analizar_imagen(imagen):
             0
         )
 
+        # Estado del aula
         estado = (
             "vacio"
             if people_count == 0
@@ -153,7 +153,7 @@ def analizar_imagen(imagen):
             "estado": estado
         }
 
-        # Liberar resultados inmediatamente
+        # Liberar memoria
         del results
         del people
         del chairs
@@ -182,12 +182,12 @@ async def predict(file: UploadFile = File(...)):
 
     try:
 
-        # Abrir directamente desde memoria
+        # Abrir imagen directamente desde memoria
         imagen = Image.open(
             BytesIO(image_bytes)
         ).convert("RGB")
 
-        # No conservar imágenes enormes
+        # Reducir imágenes demasiado grandes
         imagen.thumbnail((640, 640))
 
         # Solo una predicción simultánea
