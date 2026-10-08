@@ -6,23 +6,21 @@ import tempfile
 app = FastAPI()
 
 # ============================================================
-# MODELO YOLO
+# MODELO
 # ============================================================
 
-# YOLO11s: modelo más preciso que YOLO11n
-# Ultralytics lo descargará automáticamente si no existe.
 model = YOLO("yolo11n.pt")
 
 
 # ============================================================
-# RUTAS BÁSICAS
+# RUTAS
 # ============================================================
 
 @app.get("/")
 def inicio():
     return {
         "mensaje": "Servidor de tutoria funcionando",
-        "modelo": "YOLO11s"
+        "modelo": "YOLO11n"
     }
 
 
@@ -30,37 +28,28 @@ def inicio():
 def health():
     return {
         "estado": "ok",
-        "modelo": "YOLO11s"
+        "modelo": "YOLO11n"
     }
 
 
 # ============================================================
-# COMPROBAR SI UNA PERSONA ESTÁ SOBRE UNA SILLA
+# COMPROBAR RELACIÓN PERSONA - SILLA
 # ============================================================
 
 def punto_en_silla(person_box, chair_box):
-    """
-    Comprueba si la parte inferior de una persona
-    está dentro de la zona de una silla.
-
-    person_box = [x1, y1, x2, y2]
-    chair_box = [x1, y1, x2, y2]
-    """
 
     px1, py1, px2, py2 = person_box
     cx1, cy1, cx2, cy2 = chair_box
 
-    # Punto utilizado:
-    # centro de la parte inferior de la persona
+    # Punto inferior central de la persona
     punto_x = (px1 + px2) / 2
     punto_y = py2
 
-    # Tamaño de la silla
+    # Dimensiones de la silla
     ancho = cx2 - cx1
     alto = cy2 - cy1
 
-    # Márgenes para hacer la zona de la silla
-    # ligeramente más tolerante
+    # Margen horizontal y vertical
     margen_x = ancho * 0.25
     margen_y = alto * 0.50
 
@@ -78,20 +67,18 @@ def punto_en_silla(person_box, chair_box):
 
 
 # ============================================================
-# PREDICCIÓN
+# PREDICT
 # ============================================================
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
 
-    # Verificar que se haya enviado un archivo
     if not file:
         raise HTTPException(
             status_code=400,
             detail="No se recibió ninguna imagen"
         )
 
-    # Leer imagen
     image_bytes = await file.read()
 
     if not image_bytes:
@@ -100,12 +87,14 @@ async def predict(file: UploadFile = File(...)):
             detail="La imagen está vacía"
         )
 
-    # Archivo temporal
     temp_path = None
 
     try:
 
-        # Crear archivo temporal
+        # ----------------------------------------------------
+        # GUARDAR IMAGEN TEMPORAL
+        # ----------------------------------------------------
+
         with tempfile.NamedTemporaryFile(
             delete=False,
             suffix=".jpg"
@@ -114,21 +103,22 @@ async def predict(file: UploadFile = File(...)):
             temp_file.write(image_bytes)
             temp_path = temp_file.name
 
-        # ====================================================
-        # EJECUTAR YOLO11s
-        # ====================================================
+        # ----------------------------------------------------
+        # YOLO
+        # ----------------------------------------------------
 
         results = model(
             temp_path,
-            conf=0.25
+            conf=0.30,
+            verbose=False
         )
 
         people = []
         chairs = []
 
-        # ====================================================
+        # ----------------------------------------------------
         # PROCESAR DETECCIONES
-        # ====================================================
+        # ----------------------------------------------------
 
         for result in results:
 
@@ -142,11 +132,7 @@ async def predict(file: UploadFile = File(...)):
 
                 coordinates = box.xyxy[0].tolist()
 
-                # --------------------------------------------
                 # PERSONA
-                # COCO class 0 = person
-                # --------------------------------------------
-
                 if class_id == 0:
 
                     people.append({
@@ -154,11 +140,7 @@ async def predict(file: UploadFile = File(...)):
                         "confidence": confidence
                     })
 
-                # --------------------------------------------
                 # SILLA
-                # COCO class 56 = chair
-                # --------------------------------------------
-
                 elif class_id == 56:
 
                     chairs.append({
@@ -166,17 +148,15 @@ async def predict(file: UploadFile = File(...)):
                         "confidence": confidence
                     })
 
-        # ====================================================
+        # ----------------------------------------------------
         # DETERMINAR SILLAS OCUPADAS
-        # ====================================================
+        # ----------------------------------------------------
 
         occupied_chairs = 0
 
         for chair in chairs:
 
             chair_box = chair["box"]
-
-            silla_ocupada = False
 
             for person in people:
 
@@ -186,38 +166,42 @@ async def predict(file: UploadFile = File(...)):
                     person_box,
                     chair_box
                 ):
-                    silla_ocupada = True
+
+                    occupied_chairs += 1
                     break
 
-            if silla_ocupada:
-                occupied_chairs += 1
-
-        # ====================================================
+        # ----------------------------------------------------
         # RESULTADOS
-        # ====================================================
+        # ----------------------------------------------------
+
+        people_count = len(people)
 
         total_chairs = len(chairs)
 
-        free_chairs = total_chairs - occupied_chairs
+        free_chairs = max(
+            total_chairs - occupied_chairs,
+            0
+        )
 
-        # Para nuestro proyecto:
-        # contamos como personas a quienes realmente
-        # están ocupando una silla.
-        people_count = occupied_chairs
+        # ----------------------------------------------------
+        # ESTADO DEL SALÓN
+        # ----------------------------------------------------
 
-        # Evitar valores negativos por seguridad
-        if free_chairs < 0:
-            free_chairs = 0
+        if people_count == 0:
+            estado = "vacio"
+        else:
+            estado = "ocupado"
 
-        # ====================================================
+        # ----------------------------------------------------
         # RESPUESTA
-        # ====================================================
+        # ----------------------------------------------------
 
         return {
             "personas": people_count,
             "sillas": total_chairs,
             "ocupadas": occupied_chairs,
-            "libres": free_chairs
+            "libres": free_chairs,
+            "estado": estado
         }
 
     except Exception as e:
@@ -229,6 +213,5 @@ async def predict(file: UploadFile = File(...)):
 
     finally:
 
-        # Eliminar archivo temporal
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
