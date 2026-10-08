@@ -2,7 +2,7 @@ import os
 import gc
 import asyncio
 
-# Limitar los hilos de CPU para reducir sobrecarga
+# Limitar los hilos para reducir la sobrecarga de CPU
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
@@ -16,12 +16,13 @@ torch.set_num_threads(1)
 
 app = FastAPI()
 
-# Modelo preentrenado ligero
+# Modelo ligero preentrenado
 model = YOLO("yolo11n.pt")
 
-# Evitar que se procesen varias fotos simultáneamente
+# Evitar análisis simultáneos
 prediction_lock = asyncio.Lock()
 
+# Tamaño máximo de la imagen recibida: 8 MB
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
@@ -43,9 +44,8 @@ def health():
 
 def ejecutar_inferencia(imagen):
     """
-    Detecta personas y sillas.
-    Devuelve coordenadas y confianzas, no los objetos
-    completos de resultados de YOLO.
+    Ejecuta YOLO y conserva únicamente las detecciones
+    de personas y sillas con sus coordenadas y confianzas.
     """
 
     with torch.inference_mode():
@@ -76,16 +76,17 @@ def ejecutar_inferencia(imagen):
                     "box": coordenadas
                 })
 
-        # Al salir de esta función se liberan los resultados
-        # completos de YOLO y se conservan solo los datos simples.
+        # Liberar los resultados completos de YOLO.
+        del results
+
         return detecciones
 
 
 def compatibilidad_persona_silla(person_box, chair_box):
     """
-    Calcula si una persona podría estar ocupando una silla.
-    Devuelve una distancia: cuanto menor, mejor.
-    Devuelve None cuando no hay coincidencia suficiente.
+    Estima si una persona está asociada a una silla.
+    Devuelve una distancia: cuanto menor sea, mejor.
+    Si no hay coincidencia espacial suficiente, devuelve None.
     """
 
     px1, py1, px2, py2 = person_box
@@ -97,11 +98,11 @@ def compatibilidad_persona_silla(person_box, chair_box):
     ancho_silla = max(cx2 - cx1, 1)
     alto_silla = max(cy2 - cy1, 1)
 
-    # Punto aproximado en la zona inferior de la persona.
+    # Punto aproximado de la zona inferior de la persona.
     punto_x = (px1 + px2) / 2
     punto_y = py1 + alto_persona * 0.80
 
-    # Ampliar la silla porque puede estar parcialmente oculta.
+    # Ampliar la zona de la silla porque puede estar oculta.
     margen_x = ancho_silla * 0.35
     margen_y = alto_silla * 0.40
 
@@ -115,8 +116,8 @@ def compatibilidad_persona_silla(person_box, chair_box):
         and silla_y1 <= punto_y <= silla_y2
     )
 
-    # Comprobar también la intersección de la silla
-    # con la parte inferior de la caja de la persona.
+    # Revisar el solapamiento con la zona inferior
+    # de la caja de la persona.
     zona_persona_y1 = py1 + alto_persona * 0.55
 
     inter_x1 = max(px1, silla_x1)
@@ -141,7 +142,7 @@ def compatibilidad_persona_silla(person_box, chair_box):
     if not punto_dentro and porcentaje_solapamiento < 0.12:
         return None
 
-    # Priorizar la silla más próxima al punto de la persona.
+    # Distancia entre el punto de la persona y el centro de la silla.
     centro_silla_x = (cx1 + cx2) / 2
     centro_silla_y = (cy1 + cy2) / 2
 
@@ -153,13 +154,22 @@ def compatibilidad_persona_silla(person_box, chair_box):
         punto_y - centro_silla_y
     ) / max(alto_silla * 0.90, 1)
 
-    return (distancia_x ** 2 + distancia_y ** 2) ** 0.5
+    distancia = (distancia_x ** 2 + distancia_y ** 2) ** 0.5
+
+    return distancia
 
 
 def contar_sillas_ocupadas(personas, sillas):
     """
-    Asigna cada persona como máximo a una silla
-    y cada silla como máximo a una persona.
+    Calcula las coincidencias posibles y realiza asignaciones
+    de una persona a una silla, sin duplicar personas ni sillas.
+
+    Devuelve:
+    - Número de sillas ocupadas estimadas.
+    - Asignaciones aceptadas.
+    - Todas las coincidencias evaluadas.
+    - Personas sin ninguna coincidencia.
+    - Sillas sin ninguna coincidencia.
     """
 
     coincidencias = []
@@ -172,35 +182,71 @@ def contar_sillas_ocupadas(personas, sillas):
             )
 
             if distancia is not None:
-                coincidencias.append((
-                    distancia,
-                    indice_persona,
-                    indice_silla
-                ))
+                coincidencias.append({
+                    "persona": indice_persona + 1,
+                    "silla": indice_silla + 1,
+                    "distancia": round(distancia, 3)
+                })
 
-    # Procesar primero las coincidencias más cercanas.
-    coincidencias.sort(key=lambda item: item[0])
+    # Las distancias menores se procesan primero.
+    coincidencias.sort(key=lambda item: item["distancia"])
 
     personas_asignadas = set()
     sillas_asignadas = set()
+    asignaciones = []
 
-    for _, indice_persona, indice_silla in coincidencias:
-        if indice_persona in personas_asignadas:
-            continue
+    for coincidencia in coincidencias:
+        indice_persona = coincidencia["persona"]
+        indice_silla = coincidencia["silla"]
 
-        if indice_silla in sillas_asignadas:
-            continue
+        if (
+            indice_persona not in personas_asignadas
+            and indice_silla not in sillas_asignadas
+        ):
+            coincidencia["asignada"] = True
 
-        personas_asignadas.add(indice_persona)
-        sillas_asignadas.add(indice_silla)
+            personas_asignadas.add(indice_persona)
+            sillas_asignadas.add(indice_silla)
 
-    return len(sillas_asignadas)
+            asignaciones.append(dict(coincidencia))
+        else:
+            coincidencia["asignada"] = False
+
+    personas_con_candidata = {
+        coincidencia["persona"]
+        for coincidencia in coincidencias
+    }
+
+    sillas_con_candidata = {
+        coincidencia["silla"]
+        for coincidencia in coincidencias
+    }
+
+    personas_sin_candidata = [
+        indice
+        for indice in range(1, len(personas) + 1)
+        if indice not in personas_con_candidata
+    ]
+
+    sillas_sin_candidata = [
+        indice
+        for indice in range(1, len(sillas) + 1)
+        if indice not in sillas_con_candidata
+    ]
+
+    return (
+        len(sillas_asignadas),
+        asignaciones,
+        coincidencias,
+        personas_sin_candidata,
+        sillas_sin_candidata
+    )
 
 
 def analizar_imagen(imagen):
     """
-    Detecta personas y sillas y prepara únicamente
-    los números que necesita el sistema.
+    Detecta personas y sillas, calcula el estado del aula
+    y devuelve información de diagnóstico temporal.
     """
 
     detecciones = ejecutar_inferencia(imagen)
@@ -208,31 +254,33 @@ def analizar_imagen(imagen):
     personas = []
     sillas = []
 
+    # Separar las detecciones según su clase y confianza.
     for deteccion in detecciones:
         clase = deteccion["clase"]
         confianza = deteccion["confianza"]
 
-        # Persona: exigir confianza mínima de 0.30.
         if clase == 0 and confianza >= 0.30:
             personas.append({
                 "box": deteccion["box"],
                 "confidence": confianza
             })
 
-        # Silla: permitir detecciones desde 0.20.
         elif clase == 56 and confianza >= 0.20:
             sillas.append({
                 "box": deteccion["box"],
                 "confidence": confianza
             })
 
-    # Contar ocupantes directamente, no usando las sillas.
     total_personas = len(personas)
-
-    # Las sillas se detectan dinámicamente, sin fijar un total.
     total_sillas = len(sillas)
 
-    sillas_ocupadas = contar_sillas_ocupadas(personas, sillas)
+    (
+        sillas_ocupadas,
+        asignaciones,
+        coincidencias,
+        personas_sin_candidata,
+        sillas_sin_candidata
+    ) = contar_sillas_ocupadas(personas, sillas)
 
     sillas_libres = max(
         total_sillas - sillas_ocupadas,
@@ -241,16 +289,71 @@ def analizar_imagen(imagen):
 
     estado = "vacio" if total_personas == 0 else "ocupado"
 
+    # Mostrar las detecciones del modelo antes del filtro
+    # adicional de confianza aplicado a las personas.
+    detecciones_diagnostico = []
+
+    for deteccion in detecciones:
+        clase = deteccion["clase"]
+        confianza = deteccion["confianza"]
+
+        detecciones_diagnostico.append({
+            "clase": "persona" if clase == 0 else "silla",
+            "confianza": round(confianza, 3),
+            "incluida_en_conteo": (
+                confianza >= 0.30 if clase == 0 else confianza >= 0.20
+            ),
+            "caja": [
+                round(valor, 1)
+                for valor in deteccion["box"]
+            ]
+        })
+
+    personas_diagnostico = [
+        {
+            "id": indice + 1,
+            "confianza": round(persona["confidence"], 3),
+            "caja": [
+                round(valor, 1)
+                for valor in persona["box"]
+            ]
+        }
+        for indice, persona in enumerate(personas)
+    ]
+
+    sillas_diagnostico = [
+        {
+            "id": indice + 1,
+            "confianza": round(silla["confidence"], 3),
+            "caja": [
+                round(valor, 1)
+                for valor in silla["box"]
+            ]
+        }
+        for indice, silla in enumerate(sillas)
+    ]
+
     respuesta = {
         "personas": total_personas,
         "sillas": total_sillas,
         "ocupadas": sillas_ocupadas,
         "libres": sillas_libres,
-        "estado": estado
+        "estado": estado,
+        "diagnostico": {
+            "detecciones_modelo": detecciones_diagnostico,
+            "personas_contadas": personas_diagnostico,
+            "sillas_contadas": sillas_diagnostico,
+            "asignaciones": asignaciones,
+            "coincidencias_evaluadas": coincidencias,
+            "personas_sin_coincidencia": personas_sin_candidata,
+            "sillas_sin_coincidencia": sillas_sin_candidata
+        }
     }
 
-    # Liberar los datos intermedios antes de responder.
-    del detecciones, personas, sillas
+    # Liberar los datos intermedios.
+    del detecciones
+    del personas
+    del sillas
     gc.collect()
 
     return respuesta
@@ -262,7 +365,7 @@ async def predict(file: UploadFile = File(...)):
     image_bytes = b""
 
     try:
-        # Leer una imagen de tamaño limitado.
+        # Leer como máximo 8 MB + 1 byte para comprobar el límite.
         image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
 
         if not image_bytes:
@@ -277,14 +380,14 @@ async def predict(file: UploadFile = File(...)):
                 detail="La imagen supera el límite de 8 MB"
             )
 
-        # No guardar la imagen en un archivo temporal.
+        # Procesar directamente en memoria, sin temp.jpg.
         with Image.open(BytesIO(image_bytes)) as original:
             imagen = original.convert("RGB")
 
-        # Reducir fotos demasiado grandes.
+        # Reducir imágenes grandes antes de enviarlas a YOLO.
         imagen.thumbnail((640, 640))
 
-        # Una sola inferencia al mismo tiempo.
+        # Una inferencia a la vez.
         async with prediction_lock:
             respuesta = await asyncio.to_thread(
                 analizar_imagen,
