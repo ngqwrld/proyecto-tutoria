@@ -1,20 +1,27 @@
+import os
+import gc
+import asyncio
+
+# Reducir consumo de CPU/RAM de PyTorch
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from ultralytics import YOLO
-import os
-import tempfile
+from PIL import Image
+from io import BytesIO
+import torch
+
+torch.set_num_threads(1)
 
 app = FastAPI()
 
-# ============================================================
-# MODELO
-# ============================================================
-
+# Modelo ligero
 model = YOLO("yolo11n.pt")
 
+# Evita dos análisis simultáneos y un aumento innecesario de RAM
+prediction_lock = asyncio.Lock()
 
-# ============================================================
-# RUTAS
-# ============================================================
 
 @app.get("/")
 def inicio():
@@ -32,43 +39,129 @@ def health():
     }
 
 
-# ============================================================
-# COMPROBAR RELACIÓN PERSONA - SILLA
-# ============================================================
-
 def punto_en_silla(person_box, chair_box):
+    """
+    Comprueba si la parte inferior de una persona
+    coincide con la zona de una silla.
+    """
 
     px1, py1, px2, py2 = person_box
     cx1, cy1, cx2, cy2 = chair_box
 
-    # Punto inferior central de la persona
     punto_x = (px1 + px2) / 2
     punto_y = py2
 
-    # Dimensiones de la silla
     ancho = cx2 - cx1
     alto = cy2 - cy1
 
-    # Margen horizontal y vertical
     margen_x = ancho * 0.25
     margen_y = alto * 0.50
 
-    cx1_ampliado = cx1 - margen_x
-    cx2_ampliado = cx2 + margen_x
-
-    cy1_ampliado = cy1 - margen_y
-    cy2_ampliado = cy2 + margen_y
-
     return (
-        cx1_ampliado <= punto_x <= cx2_ampliado
+        cx1 - margen_x <= punto_x <= cx2 + margen_x
         and
-        cy1_ampliado <= punto_y <= cy2_ampliado
+        cy1 - margen_y <= punto_y <= cy2 + margen_y
     )
 
 
-# ============================================================
-# PREDICT
-# ============================================================
+def analizar_imagen(imagen):
+    """
+    Ejecuta YOLO y devuelve solamente los datos necesarios.
+    No conserva el objeto completo de resultados.
+    """
+
+    with torch.inference_mode():
+
+        results = model.predict(
+            source=imagen,
+            conf=0.30,
+            imgsz=320,
+            max_det=20,
+            device="cpu",
+            verbose=False
+        )
+
+        people = []
+        chairs = []
+
+        for result in results:
+
+            if result.boxes is None:
+                continue
+
+            for box in result.boxes:
+
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+                coordinates = box.xyxy[0].tolist()
+
+                # Persona
+                if class_id == 0:
+                    people.append({
+                        "box": coordinates,
+                        "confidence": confidence
+                    })
+
+                # Silla
+                elif class_id == 56:
+                    chairs.append({
+                        "box": coordinates,
+                        "confidence": confidence
+                    })
+
+        # Asociar personas con sillas
+        occupied_chairs = 0
+
+        for chair in chairs:
+
+            chair_box = chair["box"]
+            silla_ocupada = False
+
+            for person in people:
+
+                person_box = person["box"]
+
+                if punto_en_silla(person_box, chair_box):
+                    silla_ocupada = True
+                    break
+
+            if silla_ocupada:
+                occupied_chairs += 1
+
+        # IMPORTANTE:
+        # Las personas se cuentan directamente.
+        people_count = len(people)
+
+        total_chairs = len(chairs)
+
+        free_chairs = max(
+            total_chairs - occupied_chairs,
+            0
+        )
+
+        estado = (
+            "vacio"
+            if people_count == 0
+            else "ocupado"
+        )
+
+        resultado = {
+            "personas": people_count,
+            "sillas": total_chairs,
+            "ocupadas": occupied_chairs,
+            "libres": free_chairs,
+            "estado": estado
+        }
+
+        # Liberar resultados inmediatamente
+        del results
+        del people
+        del chairs
+
+        gc.collect()
+
+        return resultado
+
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
@@ -87,131 +180,39 @@ async def predict(file: UploadFile = File(...)):
             detail="La imagen está vacía"
         )
 
-    temp_path = None
-
     try:
 
-        # ----------------------------------------------------
-        # GUARDAR IMAGEN TEMPORAL
-        # ----------------------------------------------------
+        # Abrir directamente desde memoria
+        imagen = Image.open(
+            BytesIO(image_bytes)
+        ).convert("RGB")
 
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=".jpg"
-        ) as temp_file:
+        # No conservar imágenes enormes
+        imagen.thumbnail((640, 640))
 
-            temp_file.write(image_bytes)
-            temp_path = temp_file.name
+        # Solo una predicción simultánea
+        async with prediction_lock:
 
-        # ----------------------------------------------------
-        # YOLO
-        # ----------------------------------------------------
+            resultado = await asyncio.to_thread(
+                analizar_imagen,
+                imagen
+            )
 
-        results = model(
-            temp_path,
-            conf=0.30,
-            verbose=False
-        )
+        # Liberar imagen
+        imagen.close()
 
-        people = []
-        chairs = []
+        del image_bytes
+        del imagen
 
-        # ----------------------------------------------------
-        # PROCESAR DETECCIONES
-        # ----------------------------------------------------
+        gc.collect()
 
-        for result in results:
-
-            if result.boxes is None:
-                continue
-
-            for box in result.boxes:
-
-                class_id = int(box.cls[0])
-                confidence = float(box.conf[0])
-
-                coordinates = box.xyxy[0].tolist()
-
-                # PERSONA
-                if class_id == 0:
-
-                    people.append({
-                        "box": coordinates,
-                        "confidence": confidence
-                    })
-
-                # SILLA
-                elif class_id == 56:
-
-                    chairs.append({
-                        "box": coordinates,
-                        "confidence": confidence
-                    })
-
-        # ----------------------------------------------------
-        # DETERMINAR SILLAS OCUPADAS
-        # ----------------------------------------------------
-
-        occupied_chairs = 0
-
-        for chair in chairs:
-
-            chair_box = chair["box"]
-
-            for person in people:
-
-                person_box = person["box"]
-
-                if punto_en_silla(
-                    person_box,
-                    chair_box
-                ):
-
-                    occupied_chairs += 1
-                    break
-
-        # ----------------------------------------------------
-        # RESULTADOS
-        # ----------------------------------------------------
-
-        people_count = len(people)
-
-        total_chairs = len(chairs)
-
-        free_chairs = max(
-            total_chairs - occupied_chairs,
-            0
-        )
-
-        # ----------------------------------------------------
-        # ESTADO DEL SALÓN
-        # ----------------------------------------------------
-
-        if people_count == 0:
-            estado = "vacio"
-        else:
-            estado = "ocupado"
-
-        # ----------------------------------------------------
-        # RESPUESTA
-        # ----------------------------------------------------
-
-        return {
-            "personas": people_count,
-            "sillas": total_chairs,
-            "ocupadas": occupied_chairs,
-            "libres": free_chairs,
-            "estado": estado
-        }
+        return resultado
 
     except Exception as e:
+
+        gc.collect()
 
         raise HTTPException(
             status_code=500,
             detail=f"Error procesando la imagen: {str(e)}"
         )
-
-    finally:
-
-        if temp_path and os.path.exists(temp_path):
-            os.remove(temp_path)
