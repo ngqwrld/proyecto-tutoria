@@ -11,7 +11,7 @@ app = FastAPI()
 
 # YOLO11s: modelo más preciso que YOLO11n
 # Ultralytics lo descargará automáticamente si no existe.
-model = YOLO("yolo11s.pt")
+model = YOLO("yolo11n.pt")
 
 
 # ============================================================
