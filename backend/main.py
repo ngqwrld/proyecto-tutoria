@@ -2,7 +2,7 @@ import os
 import gc
 import asyncio
 
-# Limitar los hilos para reducir la sobrecarga de CPU
+# Reducir la sobrecarga de CPU
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
@@ -19,10 +19,10 @@ app = FastAPI()
 # Modelo ligero preentrenado
 model = YOLO("yolo11n.pt")
 
-# Evitar análisis simultáneos
+# Evitar inferencias simultáneas
 prediction_lock = asyncio.Lock()
 
-# Tamaño máximo de la imagen recibida: 8 MB
+# Tamaño máximo permitido: 8 MB
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 
@@ -44,8 +44,8 @@ def health():
 
 def ejecutar_inferencia(imagen):
     """
-    Ejecuta YOLO y conserva únicamente las detecciones
-    de personas y sillas con sus coordenadas y confianzas.
+    Detecta personas y sillas y devuelve únicamente
+    las coordenadas, clases y confianzas.
     """
 
     with torch.inference_mode():
@@ -76,17 +76,15 @@ def ejecutar_inferencia(imagen):
                     "box": coordenadas
                 })
 
-        # Liberar los resultados completos de YOLO.
         del results
-
         return detecciones
 
 
 def compatibilidad_persona_silla(person_box, chair_box):
     """
-    Estima si una persona está asociada a una silla.
-    Devuelve una distancia: cuanto menor sea, mejor.
-    Si no hay coincidencia espacial suficiente, devuelve None.
+    Estima la compatibilidad espacial entre una persona
+    y una silla. Una distancia menor significa una
+    coincidencia geométrica más cercana.
     """
 
     px1, py1, px2, py2 = person_box
@@ -98,11 +96,11 @@ def compatibilidad_persona_silla(person_box, chair_box):
     ancho_silla = max(cx2 - cx1, 1)
     alto_silla = max(cy2 - cy1, 1)
 
-    # Punto aproximado de la zona inferior de la persona.
+    # Punto aproximado de la parte inferior de la persona
     punto_x = (px1 + px2) / 2
     punto_y = py1 + alto_persona * 0.80
 
-    # Ampliar la zona de la silla porque puede estar oculta.
+    # Ampliar la caja de la silla para considerar oclusiones
     margen_x = ancho_silla * 0.35
     margen_y = alto_silla * 0.40
 
@@ -116,8 +114,7 @@ def compatibilidad_persona_silla(person_box, chair_box):
         and silla_y1 <= punto_y <= silla_y2
     )
 
-    # Revisar el solapamiento con la zona inferior
-    # de la caja de la persona.
+    # Comprobar intersección con la zona inferior de la persona
     zona_persona_y1 = py1 + alto_persona * 0.55
 
     inter_x1 = max(px1, silla_x1)
@@ -142,7 +139,6 @@ def compatibilidad_persona_silla(person_box, chair_box):
     if not punto_dentro and porcentaje_solapamiento < 0.12:
         return None
 
-    # Distancia entre el punto de la persona y el centro de la silla.
     centro_silla_x = (cx1 + cx2) / 2
     centro_silla_y = (cy1 + cy2) / 2
 
@@ -154,28 +150,23 @@ def compatibilidad_persona_silla(person_box, chair_box):
         punto_y - centro_silla_y
     ) / max(alto_silla * 0.90, 1)
 
-    distancia = (distancia_x ** 2 + distancia_y ** 2) ** 0.5
-
-    return distancia
+    return (distancia_x ** 2 + distancia_y ** 2) ** 0.5
 
 
 def contar_sillas_ocupadas(personas, sillas):
     """
-    Calcula las coincidencias posibles y realiza asignaciones
-    de una persona a una silla, sin duplicar personas ni sillas.
+    Busca parejas posibles entre personas y sillas.
+    Una persona no puede ocupar dos sillas y una silla
+    no puede asignarse a dos personas.
 
-    Devuelve:
-    - Número de sillas ocupadas estimadas.
-    - Asignaciones aceptadas.
-    - Todas las coincidencias evaluadas.
-    - Personas sin ninguna coincidencia.
-    - Sillas sin ninguna coincidencia.
+    Devuelve el conteo y los datos de diagnóstico.
     """
 
     coincidencias = []
 
     for indice_persona, persona in enumerate(personas):
         for indice_silla, silla in enumerate(sillas):
+
             distancia = compatibilidad_persona_silla(
                 persona["box"],
                 silla["box"]
@@ -188,7 +179,7 @@ def contar_sillas_ocupadas(personas, sillas):
                     "distancia": round(distancia, 3)
                 })
 
-    # Las distancias menores se procesan primero.
+    # Priorizar las coincidencias geométricamente más cercanas
     coincidencias.sort(key=lambda item: item["distancia"])
 
     personas_asignadas = set()
@@ -196,57 +187,56 @@ def contar_sillas_ocupadas(personas, sillas):
     asignaciones = []
 
     for coincidencia in coincidencias:
-        indice_persona = coincidencia["persona"]
-        indice_silla = coincidencia["silla"]
+        persona_id = coincidencia["persona"]
+        silla_id = coincidencia["silla"]
 
         if (
-            indice_persona not in personas_asignadas
-            and indice_silla not in sillas_asignadas
+            persona_id not in personas_asignadas
+            and silla_id not in sillas_asignadas
         ):
             coincidencia["asignada"] = True
 
-            personas_asignadas.add(indice_persona)
-            sillas_asignadas.add(indice_silla)
+            personas_asignadas.add(persona_id)
+            sillas_asignadas.add(silla_id)
 
             asignaciones.append(dict(coincidencia))
         else:
             coincidencia["asignada"] = False
 
     personas_con_candidata = {
-        coincidencia["persona"]
-        for coincidencia in coincidencias
+        item["persona"] for item in coincidencias
     }
 
     sillas_con_candidata = {
-        coincidencia["silla"]
-        for coincidencia in coincidencias
+        item["silla"] for item in coincidencias
     }
 
-    personas_sin_candidata = [
-        indice
-        for indice in range(1, len(personas) + 1)
-        if indice not in personas_con_candidata
+    personas_sin_coincidencia = [
+        i
+        for i in range(1, len(personas) + 1)
+        if i not in personas_con_candidata
     ]
 
-    sillas_sin_candidata = [
-        indice
-        for indice in range(1, len(sillas) + 1)
-        if indice not in sillas_con_candidata
+    sillas_sin_coincidencia = [
+        i
+        for i in range(1, len(sillas) + 1)
+        if i not in sillas_con_candidata
     ]
 
     return (
         len(sillas_asignadas),
         asignaciones,
         coincidencias,
-        personas_sin_candidata,
-        sillas_sin_candidata
+        personas_sin_coincidencia,
+        sillas_sin_coincidencia
     )
 
 
 def analizar_imagen(imagen):
     """
-    Detecta personas y sillas, calcula el estado del aula
-    y devuelve información de diagnóstico temporal.
+    Detecta personas y sillas, calcula la ocupación
+    y devuelve información adicional para diagnosticar
+    los errores de detección y asociación.
     """
 
     detecciones = ejecutar_inferencia(imagen)
@@ -254,7 +244,7 @@ def analizar_imagen(imagen):
     personas = []
     sillas = []
 
-    # Separar las detecciones según su clase y confianza.
+    # Aplicar los umbrales finales de confianza
     for deteccion in detecciones:
         clase = deteccion["clase"]
         confianza = deteccion["confianza"]
@@ -278,8 +268,8 @@ def analizar_imagen(imagen):
         sillas_ocupadas,
         asignaciones,
         coincidencias,
-        personas_sin_candidata,
-        sillas_sin_candidata
+        personas_sin_coincidencia,
+        sillas_sin_coincidencia
     ) = contar_sillas_ocupadas(personas, sillas)
 
     sillas_libres = max(
@@ -289,8 +279,8 @@ def analizar_imagen(imagen):
 
     estado = "vacio" if total_personas == 0 else "ocupado"
 
-    # Mostrar las detecciones del modelo antes del filtro
-    # adicional de confianza aplicado a las personas.
+    # Registrar todas las detecciones de YOLO antes
+    # de aplicar los umbrales adicionales del conteo.
     detecciones_diagnostico = []
 
     for deteccion in detecciones:
@@ -301,7 +291,9 @@ def analizar_imagen(imagen):
             "clase": "persona" if clase == 0 else "silla",
             "confianza": round(confianza, 3),
             "incluida_en_conteo": (
-                confianza >= 0.30 if clase == 0 else confianza >= 0.20
+                confianza >= 0.30
+                if clase == 0
+                else confianza >= 0.20
             ),
             "caja": [
                 round(valor, 1)
@@ -341,16 +333,16 @@ def analizar_imagen(imagen):
         "estado": estado,
         "diagnostico": {
             "detecciones_modelo": detecciones_diagnostico,
-            "personas_contadas": personas_diagnostico,
-            "sillas_contadas": sillas_diagnostico,
+            "personas_detectadas": personas_diagnostico,
+            "sillas_detectadas": sillas_diagnostico,
             "asignaciones": asignaciones,
             "coincidencias_evaluadas": coincidencias,
-            "personas_sin_coincidencia": personas_sin_candidata,
-            "sillas_sin_coincidencia": sillas_sin_candidata
+            "personas_sin_coincidencia": personas_sin_coincidencia,
+            "sillas_sin_coincidencia": sillas_sin_coincidencia
         }
     }
 
-    # Liberar los datos intermedios.
+    # Liberar datos intermedios antes de responder
     del detecciones
     del personas
     del sillas
@@ -365,7 +357,7 @@ async def predict(file: UploadFile = File(...)):
     image_bytes = b""
 
     try:
-        # Leer como máximo 8 MB + 1 byte para comprobar el límite.
+        # Limitar el tamaño de la imagen recibida
         image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
 
         if not image_bytes:
@@ -380,14 +372,14 @@ async def predict(file: UploadFile = File(...)):
                 detail="La imagen supera el límite de 8 MB"
             )
 
-        # Procesar directamente en memoria, sin temp.jpg.
+        # Procesar la imagen directamente en memoria
         with Image.open(BytesIO(image_bytes)) as original:
             imagen = original.convert("RGB")
 
-        # Reducir imágenes grandes antes de enviarlas a YOLO.
+        # Reducir imágenes excesivamente grandes
         imagen.thumbnail((640, 640))
 
-        # Una inferencia a la vez.
+        # Solo una inferencia simultánea
         async with prediction_lock:
             respuesta = await asyncio.to_thread(
                 analizar_imagen,
