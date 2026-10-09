@@ -20,14 +20,33 @@ import numpy as np
 import onnxruntime as ort
 
 from PIL import Image, UnidentifiedImageError
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+import psycopg
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn.error")
 
-app = FastAPI()
+app = FastAPI(title="API de ocupación de aulas")
 
-APP_VERSION = "onnx-ram-check-v2"
+# Permite consumir las rutas de lectura desde el dashboard web.
+# Para restringirlo posteriormente, define CORS_ORIGINS en Render
+# con los dominios separados por comas.
+CORS_ORIGINS = [
+    origen.strip()
+    for origen in os.getenv("CORS_ORIGINS", "*").split(",")
+    if origen.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+APP_VERSION = "onnx-supabase-ram-v1"
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 INPUT_SIZE = 320
@@ -165,8 +184,125 @@ def health():
     return {
         "estado": "ok",
         "modelo": "YOLO11n ONNX + OpenCV",
-        "version_api": APP_VERSION
+        "version_api": APP_VERSION,
+        "base_datos_configurada": bool(DATABASE_URL)
     }
+
+
+def abrir_conexion_bd():
+    """Abre una conexión segura a PostgreSQL mediante DATABASE_URL."""
+    if not DATABASE_URL:
+        raise RuntimeError("La variable DATABASE_URL no está configurada en Render.")
+
+    return psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=8,
+        sslmode="require",
+        prepare_threshold=None
+    )
+
+
+def guardar_registro_bd(respuesta, origen="esp32-cam"):
+    """Guarda únicamente los números del análisis, nunca la fotografía."""
+    origen_limpio = (origen or "esp32-cam").strip()[:80] or "esp32-cam"
+
+    with abrir_conexion_bd() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO public.registros_ocupacion
+                    (personas, sillas, ocupadas, libres, estado, origen)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, fecha_hora
+                """,
+                (
+                    int(respuesta["personas"]),
+                    int(respuesta["sillas"]),
+                    int(respuesta["ocupadas"]),
+                    int(respuesta["libres"]),
+                    str(respuesta["estado"]),
+                    origen_limpio,
+                ),
+            )
+            fila = cursor.fetchone()
+
+    return {
+        "id": fila[0],
+        "fecha_hora": fila[1].isoformat() if fila[1] else None,
+        "origen": origen_limpio,
+    }
+
+
+def fila_a_registro(fila):
+    return {
+        "id": fila[0],
+        "fecha_hora": fila[1].isoformat() if fila[1] else None,
+        "personas": fila[2],
+        "sillas": fila[3],
+        "ocupadas": fila[4],
+        "libres": fila[5],
+        "estado": fila[6],
+        "origen": fila[7],
+    }
+
+
+def consultar_registros_bd(limite):
+    with abrir_conexion_bd() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, fecha_hora, personas, sillas, ocupadas,
+                       libres, estado, origen
+                FROM public.registros_ocupacion
+                ORDER BY fecha_hora DESC, id DESC
+                LIMIT %s
+                """,
+                (limite,),
+            )
+            filas = cursor.fetchall()
+
+    return [fila_a_registro(fila) for fila in filas]
+
+
+@app.get("/ocupacion/actual")
+def ocupacion_actual():
+    """Devuelve el registro más reciente para el dashboard."""
+    try:
+        registros = consultar_registros_bd(1)
+    except Exception:
+        logger.exception(json.dumps({
+            "evento": "consulta_bd_error",
+            "ruta": "/ocupacion/actual",
+            "version_api": APP_VERSION,
+        }))
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo consultar la base de datos. Revisa la configuración y los logs."
+        )
+
+    if not registros:
+        return {"encontrado": False, "registro": None}
+
+    return {"encontrado": True, "registro": registros[0]}
+
+
+@app.get("/ocupacion/historial")
+def ocupacion_historial(limite: int = Query(default=100, ge=1, le=500)):
+    """Devuelve hasta 500 registros recientes para gráficos e historial."""
+    try:
+        registros = consultar_registros_bd(limite)
+    except Exception:
+        logger.exception(json.dumps({
+            "evento": "consulta_bd_error",
+            "ruta": "/ocupacion/historial",
+            "version_api": APP_VERSION,
+        }))
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo consultar la base de datos. Revisa la configuración y los logs."
+        )
+
+    return {"cantidad": len(registros), "registros": registros}
 
 
 def preparar_entrada(imagen_rgb):
@@ -672,7 +808,10 @@ def analizar_imagen(imagen):
 
 
 @app.post("/predict")
-async def predict(file: UploadFile = File(...)):
+async def predict(
+    file: UploadFile = File(...),
+    origen: str = Form(default="esp32-cam")
+):
     inicio_api = time.perf_counter()
     request_id = uuid.uuid4().hex[:8]
 
@@ -752,9 +891,42 @@ async def predict(file: UploadFile = File(...)):
         tiempos["lectura_bytes_ms"] = lectura_ms
         tiempos["decodificacion_imagen_ms"] = decodificacion_ms
         tiempos["espera_turno_ms"] = espera_lock_ms
+
+        # La petición solo se considera exitosa si el registro quedó guardado.
+        # Se almacena el conteo y metadatos mínimos, nunca los bytes de la foto.
+        inicio_guardado_bd = time.perf_counter()
+        try:
+            registro_bd = await asyncio.to_thread(
+                guardar_registro_bd,
+                respuesta,
+                origen,
+            )
+        except Exception:
+            logger.exception(json.dumps({
+                "evento": "guardar_bd_error",
+                "version_api": APP_VERSION,
+                "request_id": request_id,
+                "personas": respuesta.get("personas"),
+                "sillas": respuesta.get("sillas"),
+            }))
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "El análisis terminó, pero no se pudo guardar en Supabase. "
+                    "Revisa DATABASE_URL, la conexión y los logs de Render."
+                ),
+            )
+
+        tiempos["guardar_bd_ms"] = round(
+            (time.perf_counter() - inicio_guardado_bd) * 1000, 2
+        )
         tiempos["api_total_ms"] = round(
             (time.perf_counter() - inicio_api) * 1000, 2
         )
+        respuesta["registro_bd"] = {
+            "guardado": True,
+            **registro_bd,
+        }
 
         logger.info(json.dumps({
             "evento": "predict_completado",
@@ -763,7 +935,8 @@ async def predict(file: UploadFile = File(...)):
             "tiempos_ms": tiempos,
             "memoria_mb": respuesta["memoria_mb"],
             "personas": respuesta["personas"],
-            "sillas": respuesta["sillas"]
+            "sillas": respuesta["sillas"],
+            "registro_bd": respuesta["registro_bd"],
         }))
 
         return respuesta
