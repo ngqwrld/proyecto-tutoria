@@ -44,6 +44,75 @@ if not MODEL_PATH.exists():
         f"No se encontró el modelo ONNX: {MODEL_PATH}"
     )
 
+
+def leer_memoria_proceso_mb():
+    """
+    Lee VmRSS (RAM residente actual) y VmHWM
+    (máximo residente desde el inicio del proceso).
+
+    Funciona en Linux, como el entorno de Render.
+    Si /proc no está disponible, devuelve None.
+    """
+
+    datos = {
+        "rss_mb": None,
+        "hwm_mb": None
+    }
+
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as archivo:
+            for linea in archivo:
+                if linea.startswith("VmRSS:"):
+                    kb = int(linea.split()[1])
+                    datos["rss_mb"] = round(kb / 1024, 2)
+
+                elif linea.startswith("VmHWM:"):
+                    kb = int(linea.split()[1])
+                    datos["hwm_mb"] = round(kb / 1024, 2)
+
+                if (
+                    datos["rss_mb"] is not None
+                    and datos["hwm_mb"] is not None
+                ):
+                    break
+
+    except (OSError, ValueError, IndexError):
+        pass
+
+    return datos
+
+
+async def muestrear_memoria(stop_event, tracker):
+    """
+    Muestrea la RAM del proceso cada 100 ms durante
+    una solicitud de análisis.
+
+    El pico es una estimación muestreada: un pico muy
+    breve podría ocurrir entre dos mediciones.
+    """
+
+    while not stop_event.is_set():
+        memoria = leer_memoria_proceso_mb()
+        rss = memoria["rss_mb"]
+
+        if rss is not None:
+            actual = tracker.get("pico_rss_mb")
+
+            if actual is None or rss > actual:
+                tracker["pico_rss_mb"] = rss
+
+        try:
+            await asyncio.wait_for(
+                stop_event.wait(),
+                timeout=0.1
+            )
+        except asyncio.TimeoutError:
+            pass
+
+
+# Medir la carga del modelo al arrancar
+inicio_carga = time.perf_counter()
+
 options = ort.SessionOptions()
 options.intra_op_num_threads = 1
 options.inter_op_num_threads = 1
@@ -51,8 +120,6 @@ options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
 options.graph_optimization_level = (
     ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 )
-
-inicio_carga = time.perf_counter()
 
 session = ort.InferenceSession(
     str(MODEL_PATH),
@@ -67,10 +134,13 @@ CARGA_MODELO_MS = round(
     (time.perf_counter() - inicio_carga) * 1000, 2
 )
 
+MEMORIA_INICIO = leer_memoria_proceso_mb()
+
 logger.info(json.dumps({
     "evento": "modelo_onnx_cargado",
     "modelo": MODEL_PATH.name,
     "carga_modelo_ms": CARGA_MODELO_MS,
+    "memoria_inicio_mb": MEMORIA_INICIO,
     "input_shape": session.get_inputs()[0].shape,
     "output_shapes": [
         item.shape for item in session.get_outputs()
@@ -96,7 +166,7 @@ def health():
 
 
 def preparar_entrada(imagen_rgb):
-    """Redimensionar y rellenar la imagen hasta 320x320."""
+    """Redimensiona y rellena la imagen hasta 320x320."""
 
     inicio = time.perf_counter()
 
@@ -150,7 +220,7 @@ def preparar_entrada(imagen_rgb):
 
 
 def detectar_personas(imagen):
-    """Ejecutar ONNX Runtime y extraer las personas detectadas."""
+    """Ejecuta ONNX Runtime y extrae las personas detectadas."""
 
     with imagen.convert("RGB") as rgb:
         imagen_rgb = np.array(rgb)
@@ -184,18 +254,16 @@ def detectar_personas(imagen):
     if predicciones.ndim == 3:
         predicciones = predicciones[0]
 
-    # La salida esperada de YOLO11n COCO es 84x2100
-    # o 2100x84: 4 coordenadas y 80 clases.
+    # YOLO11n COCO: 4 coordenadas y 80 clases.
     if predicciones.shape[0] < predicciones.shape[1]:
         predicciones = predicciones.T
 
     if predicciones.shape[1] != 84:
         raise RuntimeError(
-            "Formato de salida ONNX inesperado: "
-            f"{predicciones.shape}"
+            f"Formato de salida ONNX inesperado: {predicciones.shape}"
         )
 
-    # Clase 0 = persona; YOLO11 no usa objectness separado aquí.
+    # Clase 0 = persona.
     puntuaciones = predicciones[:, 4]
     indices = np.flatnonzero(
         puntuaciones >= CONF_PERSONA
@@ -281,7 +349,7 @@ def detectar_personas(imagen):
 
 
 def detectar_sillas_verdes(imagen):
-    """Detectar regiones verdes con OpenCV."""
+    """Detecta componentes de color verde usando OpenCV."""
 
     inicio = time.perf_counter()
 
@@ -397,7 +465,6 @@ def interseccion_cajas(box_a, box_b):
 
 def area_caja(box):
     x1, y1, x2, y2 = box
-
     return (
         max(0.0, x2 - x1)
         * max(0.0, y2 - y1)
@@ -506,13 +573,18 @@ def asociar_personas_sillas(personas, sillas):
 def analizar_imagen(imagen):
     inicio_analisis = time.perf_counter()
 
+    memoria_inicio = leer_memoria_proceso_mb()
+
     personas, tiempos_yolo = detectar_personas(imagen)
+
+    memoria_despues_yolo = leer_memoria_proceso_mb()
 
     sillas, diagnostico_verde, opencv_ms = (
         detectar_sillas_verdes(imagen)
     )
 
-    # Corregido: medir la asociación desde su propio inicio.
+    memoria_despues_opencv = leer_memoria_proceso_mb()
+
     inicio_asociacion = time.perf_counter()
 
     (
@@ -527,6 +599,8 @@ def analizar_imagen(imagen):
         (time.perf_counter() - inicio_asociacion) * 1000,
         2
     )
+
+    memoria_despues_asociacion = leer_memoria_proceso_mb()
 
     total_personas = len(personas)
     total_sillas = len(sillas)
@@ -572,11 +646,20 @@ def analizar_imagen(imagen):
             "personas_sin_silla": personas_sin_silla,
             "sillas_sin_persona": sillas_sin_persona
         },
-        "tiempos_ms": tiempos
+        "tiempos_ms": tiempos,
+        "memoria_mb": {
+            "antes_yolo_rss": memoria_inicio["rss_mb"],
+            "despues_yolo_rss": memoria_despues_yolo["rss_mb"],
+            "despues_opencv_rss": memoria_despues_opencv["rss_mb"],
+            "despues_asociacion_rss": memoria_despues_asociacion["rss_mb"]
+        }
     }
 
     del personas, sillas
     gc.collect()
+
+    memoria_final = leer_memoria_proceso_mb()
+    respuesta["memoria_mb"]["despues_gc_rss"] = memoria_final["rss_mb"]
 
     return respuesta
 
@@ -588,11 +671,13 @@ async def predict(file: UploadFile = File(...)):
 
     imagen = None
     image_bytes = b""
+    stop_event = None
+    sampler_task = None
+    tracker = {"pico_rss_mb": None}
 
     try:
         inicio_lectura = time.perf_counter()
         image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
-
         lectura_ms = round(
             (time.perf_counter() - inicio_lectura) * 1000, 2
         )
@@ -621,18 +706,33 @@ async def predict(file: UploadFile = File(...)):
             2
         )
 
+        memoria_antes = leer_memoria_proceso_mb()
+        tracker["pico_rss_mb"] = memoria_antes["rss_mb"]
+
         inicio_espera = time.perf_counter()
 
         async with prediction_lock:
             espera_lock_ms = round(
-                (time.perf_counter() - inicio_espera) * 1000,
-                2
+                (time.perf_counter() - inicio_espera) * 1000, 2
             )
 
-            respuesta = await asyncio.to_thread(
-                analizar_imagen,
-                imagen
+            # Muestrear RAM solo durante el análisis de esta petición.
+            stop_event = asyncio.Event()
+            sampler_task = asyncio.create_task(
+                muestrear_memoria(stop_event, tracker)
             )
+
+            try:
+                respuesta = await asyncio.to_thread(
+                    analizar_imagen,
+                    imagen
+                )
+            finally:
+                stop_event.set()
+                await sampler_task
+                sampler_task = None
+
+        memoria_despues = leer_memoria_proceso_mb()
 
         tiempos = respuesta["tiempos_ms"]
         tiempos["lectura_bytes_ms"] = lectura_ms
@@ -642,17 +742,30 @@ async def predict(file: UploadFile = File(...)):
             (time.perf_counter() - inicio_api) * 1000, 2
         )
 
+        respuesta["memoria_mb"].update({
+            "antes_analisis_rss": memoria_antes["rss_mb"],
+            "despues_analisis_rss": memoria_despues["rss_mb"],
+            "pico_muestreado_solicitud_rss": tracker["pico_rss_mb"],
+            "pico_proceso_desde_inicio_hwm": memoria_despues["hwm_mb"]
+        })
+
         logger.info(json.dumps({
             "evento": "predict_completado",
             "request_id": request_id,
             "tiempos_ms": tiempos,
+            "memoria_mb": respuesta["memoria_mb"],
             "personas": respuesta["personas"],
             "sillas": respuesta["sillas"]
         }))
 
         return respuesta
 
-    except HTTPException:
+    except HTTPException as error:
+        logger.warning(json.dumps({
+            "evento": "predict_http_error",
+            "request_id": request_id,
+            "status_code": error.status_code
+        }))
         raise
 
     except UnidentifiedImageError:
@@ -666,13 +779,21 @@ async def predict(file: UploadFile = File(...)):
             "evento": "predict_error",
             "request_id": request_id
         }))
-
         raise HTTPException(
             status_code=500,
             detail="Error procesando la imagen. Revisa los logs."
         )
 
     finally:
+        if stop_event is not None:
+            stop_event.set()
+
+        if sampler_task is not None:
+            try:
+                await sampler_task
+            except Exception:
+                pass
+
         if imagen is not None:
             imagen.close()
 
