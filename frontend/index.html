@@ -214,6 +214,7 @@
       </div>
       <div class="top-actions">
         <div class="api-pill"><span class="dot" id="apiDot"></span><span id="apiStatus">Conectando con la API</span></div>
+        <div class="api-pill"><span class="dot" id="realtimeDot"></span><span id="realtimeStatus">Realtime sin configurar</span></div>
         <button class="refresh-btn" id="refreshButton" type="button">
           <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17.3 6L20 12M4 12l2.7 6A7 7 0 0 0 18.4 15"/></svg>
           <span class="button-label">Actualizar</span>
@@ -315,17 +316,25 @@
       <div class="table-wrap"><table><thead><tr><th>Fecha y hora</th><th>Personas</th><th>Sillas</th><th>Ocupadas</th><th>Libres</th><th>Estado</th><th>Origen</th></tr></thead><tbody id="historyBody"><tr><td colspan="7" class="empty-state">Cargando historial…</td></tr></tbody></table></div>
     </section>
 
-    <footer class="footer"><span><strong>Monitor de tutorías UTS</strong> · Procesamiento en Render · Historial en PostgreSQL/Supabase</span><span>Actualización automática cada 30 segundos · No se almacenan fotografías</span></footer>
+    <footer class="footer"><span><strong>Monitor de tutorías UTS</strong> · Procesamiento en Render · Historial en PostgreSQL/Supabase</span><span>Actualización en vivo con Supabase Realtime; consulta de respaldo cada 30 s si no conecta · No se almacenan fotografías</span></footer>
   </main>
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script>
-    // API pública de Render; no guardar claves secretas en el navegador.
+    // API pública de Render. La clave publishable/anon de Supabase es para el navegador;
+    // nunca pegues aquí una service_role ni una secret key.
     const API_BASE_URL = "https://proyecto-tutoria-wu98.onrender.com";
-    const REFRESH_INTERVAL_MS = 30000;
+    const SUPABASE_URL = "https://prxwwzgoklwjdciwuvdd.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_otBd9oTl_hiOKmfmSsGx0Q_lv44OXem";
+    const REFRESH_INTERVAL_MS = 30000; // respaldo si Realtime no conecta
     const MAX_CHART_POINTS = 24;
     let allRecords = [];
     let selectedModule = "1";
     let isRefreshing = false;
+    let refreshPending = false;
+    let realtimeConnected = false;
+    let realtimeClient = null;
+    let realtimeChannel = null;
 
     const $ = (id) => document.getElementById(id);
     const numberFormat = new Intl.NumberFormat("es-CO");
@@ -351,6 +360,52 @@
       return allRecords.filter(row => moduleFromOrigin(row.origen) === moduleId).slice().sort((a,b) => (parseDate(b.fecha_hora)?.getTime() || 0) - (parseDate(a.fecha_hora)?.getTime() || 0));
     }
     function setApiStatus(ok, text) { $("apiDot").className = "dot " + (ok ? "ok" : "bad"); $("apiStatus").textContent = text; }
+    function setRealtimeStatus(ok, text) { $("realtimeDot").className = "dot " + (ok ? "ok" : "bad"); $("realtimeStatus").textContent = text; }
+    function startRealtimeSubscription() {
+      const key = SUPABASE_PUBLISHABLE_KEY.trim();
+      if (!key || key === "PEGA_AQUI_TU_CLAVE_PUBLICABLE") {
+        realtimeConnected = false;
+        setRealtimeStatus(false, "Realtime sin configurar");
+        return;
+      }
+      if (!window.supabase || typeof window.supabase.createClient !== "function") {
+        realtimeConnected = false;
+        setRealtimeStatus(false, "No cargó cliente Realtime");
+        return;
+      }
+      try {
+        realtimeClient = window.supabase.createClient(SUPABASE_URL, key, {
+          auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }
+        });
+        realtimeChannel = realtimeClient
+          .channel("registros-ocupacion-dashboard")
+          .on("postgres_changes", {
+            event: "INSERT",
+            schema: "public",
+            table: "registros_ocupacion"
+          }, (payload) => {
+            console.info("Nuevo registro de ocupación recibido por Realtime", payload.new && payload.new.id);
+            // Si llega un evento mientras se consulta la API, la petición quedará en cola.
+            refreshDashboard();
+          })
+          .subscribe((status, error) => {
+            if (status === "SUBSCRIBED") {
+              realtimeConnected = true;
+              setRealtimeStatus(true, "Tiempo real conectado");
+              refreshDashboard();
+            } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+              realtimeConnected = false;
+              setRealtimeStatus(false, "Respaldo cada 30 s");
+              if (error) console.warn("Supabase Realtime:", error.message || error);
+              // La consulta periódica seguirá funcionando como respaldo.
+            }
+          });
+      } catch (error) {
+        realtimeConnected = false;
+        setRealtimeStatus(false, "Respaldo cada 30 s");
+        console.warn("No se pudo iniciar Supabase Realtime:", error);
+      }
+    }
     function showError(message, title = "No se pudo actualizar") { $("errorTitle").textContent = title; $("errorMessage").textContent = message; $("errorAlert").classList.add("show"); }
     function hideError() { $("errorAlert").classList.remove("show"); }
     async function fetchJson(path) {
@@ -593,7 +648,7 @@
       renderSelectedModule();
     }
     async function refreshDashboard() {
-      if (isRefreshing) return;
+      if (isRefreshing) { refreshPending = true; return; }
       isRefreshing = true;
       const button = $("refreshButton"); button.disabled = true; $("refreshIcon").classList.add("spin");
       try {
@@ -615,6 +670,10 @@
         showError("No fue posible leer la API de Render. Puede estar despertando después de un período de inactividad. Se volverá a intentar automáticamente. Detalle: " + (error && error.message ? error.message : "error desconocido"));
       } finally {
         button.disabled = false; $("refreshIcon").classList.remove("spin"); isRefreshing = false;
+        if (refreshPending) {
+          refreshPending = false;
+          window.setTimeout(refreshDashboard, 150);
+        }
       }
     }
 
@@ -623,7 +682,9 @@
     $("refreshButton").addEventListener("click", refreshDashboard);
     window.addEventListener("resize", () => drawChart(recordsForModule()));
     refreshDashboard();
-    window.setInterval(refreshDashboard, REFRESH_INTERVAL_MS);
+    startRealtimeSubscription();
+    // Realtime realiza las actualizaciones inmediatas. La consulta periódica solo es respaldo.
+    window.setInterval(() => { if (!realtimeConnected) refreshDashboard(); }, REFRESH_INTERVAL_MS);
   </script>
 </body>
 </html>
