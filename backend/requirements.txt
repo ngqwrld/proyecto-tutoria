@@ -1,5 +1,8 @@
+
 fastapi
 uvicorn
-ultralytics
 python-multipart
 Pillow
+numpy
+opencv-python-headless
+onnxruntime
