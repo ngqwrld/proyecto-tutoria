@@ -2,6 +2,7 @@ import os
 import gc
 import asyncio
 
+# Limitar los hilos de CPU
 os.environ["OMP_NUM_THREADS"] = "1"
 os.environ["MKL_NUM_THREADS"] = "1"
 
@@ -15,20 +16,22 @@ torch.set_num_threads(1)
 
 app = FastAPI()
 
+# Modelo ligero
 model = YOLO("yolo11n.pt")
+
+# Procesar una sola imagen a la vez
 prediction_lock = asyncio.Lock()
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 
 CONF_PERSONA = 0.30
 CONF_SILLA = 0.20
-CONF_SILLA_RECORTE = 0.08
+CONF_SILLA_OCULTA = 0.08
 
-MAX_AREA_SILLA = 0.35
-UMBRAL_CONTENCION = 0.82
-UMBRAL_IOU_PERSONA = 0.45
-UMBRAL_IOU_SILLA = 0.25
+UMBRAL_CONTENCION = 0.85
+UMBRAL_IOU_DUPLICADO = 0.15
 UMBRAL_ASOCIACION = 0.15
+UMBRAL_SILLA_OCULTA = 0.20
 
 
 @app.get("/")
@@ -49,7 +52,7 @@ def health():
 
 def area_caja(box):
     x1, y1, x2, y2 = box
-    return max(0, x2 - x1) * max(0, y2 - y1)
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
 
 
 def area_interseccion(box_a, box_b):
@@ -61,10 +64,10 @@ def area_interseccion(box_a, box_b):
     x2 = min(ax2, bx2)
     y2 = min(ay2, by2)
 
-    return max(0, x2 - x1) * max(0, y2 - y1)
+    return max(0.0, x2 - x1) * max(0.0, y2 - y1)
 
 
-def iou_cajas(box_a, box_b):
+def calcular_iou(box_a, box_b):
     interseccion = area_interseccion(box_a, box_b)
 
     union = (
@@ -91,33 +94,25 @@ def contencion_cajas(box_a, box_b):
     return area_interseccion(box_a, box_b) / area_menor
 
 
-def ejecutar_yolo(
-    imagen,
-    clases,
-    confianza,
-    origen,
-    contador_ids,
-    offset_x=0,
-    offset_y=0
-):
+def ejecutar_inferencia(imagen):
     """
-    Ejecuta YOLO sobre una imagen o recorte.
-    Convierte las coordenadas de recortes a las
-    coordenadas de la imagen completa.
+    Una sola llamada a YOLO para la fotografía completa.
+    No crea recortes ni archivos temporales.
     """
-
-    detecciones = []
 
     with torch.inference_mode():
         results = model.predict(
             source=imagen,
-            conf=confianza,
+            conf=0.05,
             imgsz=416,
             max_det=30,
-            classes=clases,
+            classes=[0, 56],
             device="cpu",
             verbose=False
         )
+
+        detecciones = []
+        siguiente_id = 1
 
         for result in results:
             if result.boxes is None:
@@ -125,23 +120,17 @@ def ejecutar_yolo(
 
             for box in result.boxes:
                 clase = int(box.cls[0])
-                score = float(box.conf[0])
-                x1, y1, x2, y2 = box.xyxy[0].tolist()
-
-                contador_ids[0] += 1
+                confianza = float(box.conf[0])
+                coordenadas = box.xyxy[0].tolist()
 
                 detecciones.append({
-                    "id_modelo": contador_ids[0],
+                    "id_modelo": siguiente_id,
                     "clase": clase,
-                    "confianza": score,
-                    "origen": origen,
-                    "box": [
-                        x1 + offset_x,
-                        y1 + offset_y,
-                        x2 + offset_x,
-                        y2 + offset_y
-                    ]
+                    "confianza": confianza,
+                    "box": coordenadas
                 })
+
+                siguiente_id += 1
 
         del results
 
@@ -149,29 +138,36 @@ def ejecutar_yolo(
     return detecciones
 
 
-def eliminar_duplicados(
-    candidatas,
-    umbral_contencion=UMBRAL_CONTENCION,
-    umbral_iou=0.40
+def filtrar_detecciones(
+    detecciones,
+    clase_objetivo,
+    confianza_minima,
+    usar_iou=False
 ):
     """
-    Elimina cajas casi idénticas conservando primero
-    las detecciones con mayor confianza.
+    Filtra por clase y confianza y elimina cajas
+    casi completamente contenidas en otras detecciones.
     """
 
-    ordenadas = sorted(
-        candidatas,
-        key=lambda item: item["confianza"],
+    candidatas = [
+        dict(d)
+        for d in detecciones
+        if (
+            d["clase"] == clase_objetivo
+            and d["confianza"] >= confianza_minima
+        )
+    ]
+
+    candidatas.sort(
+        key=lambda d: d["confianza"],
         reverse=True
     )
 
     seleccionadas = []
     descartadas = []
 
-    for candidata in ordenadas:
-        duplicado_de = None
-        mejor_contencion = 0.0
-        mejor_iou = 0.0
+    for candidata in candidatas:
+        mejor = None
 
         for aceptada in seleccionadas:
             contencion = contencion_cajas(
@@ -179,36 +175,48 @@ def eliminar_duplicados(
                 aceptada["box"]
             )
 
-            iou = iou_cajas(
+            iou = calcular_iou(
                 candidata["box"],
                 aceptada["box"]
             )
 
-            if (
-                contencion >= umbral_contencion
-                or iou >= umbral_iou
-            ):
-                if (
-                    duplicado_de is None
-                    or contencion > mejor_contencion
-                ):
-                    duplicado_de = aceptada
-                    mejor_contencion = contencion
-                    mejor_iou = iou
+            es_duplicado = (
+                contencion >= UMBRAL_CONTENCION
+                or (
+                    usar_iou
+                    and iou >= 0.40
+                )
+            )
 
-        if duplicado_de is not None:
+            if es_duplicado:
+                if (
+                    mejor is None
+                    or contencion > mejor["contencion"]
+                ):
+                    mejor = {
+                        "referencia": aceptada,
+                        "contencion": contencion,
+                        "iou": iou
+                    }
+
+        if mejor is not None:
             descartadas.append({
                 "id_modelo": candidata["id_modelo"],
-                "clase": candidata["clase"],
+                "clase": (
+                    "persona"
+                    if clase_objetivo == 0
+                    else "silla"
+                ),
                 "confianza": round(
                     candidata["confianza"], 3
                 ),
-                "origen": candidata["origen"],
-                "duplicado_de": duplicado_de["id_modelo"],
-                "contencion": round(
-                    mejor_contencion, 3
+                "duplicado_de": (
+                    mejor["referencia"]["id_modelo"]
                 ),
-                "iou": round(mejor_iou, 3)
+                "contencion": round(
+                    mejor["contencion"], 3
+                ),
+                "iou": round(mejor["iou"], 3)
             })
         else:
             seleccionadas.append(candidata)
@@ -216,103 +224,46 @@ def eliminar_duplicados(
     return seleccionadas, descartadas
 
 
-def detectar_sillas_en_recortes(imagen, contador_ids):
+def buscar_duplicado_silla(candidata, sillas):
     """
-    Divide la imagen en cuatro recortes superpuestos.
-    Conserva las cajas en coordenadas de la imagen original.
+    Revisa si una candidata de baja confianza
+    ya está representada por otra caja.
     """
 
-    ancho, alto = imagen.size
+    mejor = None
 
-    ancho_recorte = max(1, int(ancho * 0.62))
-    alto_recorte = max(1, int(alto * 0.62))
+    for silla in sillas:
+        contencion = contencion_cajas(
+            candidata["box"],
+            silla["box"]
+        )
 
-    posiciones_x = sorted({
-        0,
-        max(0, ancho - ancho_recorte)
-    })
+        iou = calcular_iou(
+            candidata["box"],
+            silla["box"]
+        )
 
-    posiciones_y = sorted({
-        0,
-        max(0, alto - alto_recorte)
-    })
+        if (
+            contencion >= UMBRAL_CONTENCION
+            or iou >= UMBRAL_IOU_DUPLICADO
+        ):
+            if (
+                mejor is None
+                or contencion > mejor["contencion"]
+            ):
+                mejor = {
+                    "referencia": silla,
+                    "contencion": contencion,
+                    "iou": iou
+                }
 
-    detecciones = []
-    recortes_info = []
-    cajas_grandes = []
-
-    for y0 in posiciones_y:
-        for x0 in posiciones_x:
-            x1 = min(x0 + ancho_recorte, ancho)
-            y1 = min(y0 + alto_recorte, alto)
-
-            nombre = f"recorte_x{x0}_y{y0}"
-
-            recorte = imagen.crop((x0, y0, x1, y1))
-
-            try:
-                resultados = ejecutar_yolo(
-                    imagen=recorte,
-                    clases=[56],
-                    confianza=0.05,
-                    origen=nombre,
-                    contador_ids=contador_ids,
-                    offset_x=x0,
-                    offset_y=y0
-                )
-            finally:
-                recorte.close()
-
-            validas = 0
-            grandes = 0
-
-            for deteccion in resultados:
-                fraccion_area = (
-                    area_caja(deteccion["box"])
-                    / max(ancho * alto, 1)
-                )
-
-                deteccion["fraccion_area_imagen"] = round(
-                    fraccion_area, 3
-                )
-
-                if fraccion_area > MAX_AREA_SILLA:
-                    cajas_grandes.append({
-                        "id_modelo": deteccion["id_modelo"],
-                        "confianza": round(
-                            deteccion["confianza"], 3
-                        ),
-                        "origen": nombre,
-                        "fraccion_area_imagen": round(
-                            fraccion_area, 3
-                        ),
-                        "motivo": "caja_demasiado_grande",
-                        "box": deteccion["box"]
-                    })
-                    grandes += 1
-                    continue
-
-                if deteccion["confianza"] >= CONF_SILLA_RECORTE:
-                    detecciones.append(deteccion)
-                    validas += 1
-
-            recortes_info.append({
-                "origen": nombre,
-                "coordenadas": [x0, y0, x1, y1],
-                "detecciones_validas": validas,
-                "cajas_grandes_descartadas": grandes
-            })
-
-            del resultados
-            gc.collect()
-
-    return detecciones, recortes_info, cajas_grandes
+    return mejor
 
 
 def asociar_personas_sillas(personas, sillas):
     """
-    Asocia personas con sillas mediante la superposición
-    de sus cajas. Cada persona y silla se asigna una vez.
+    Una persona y una silla pueden formar como máximo
+    una pareja en el resultado final.
     """
 
     coincidencias = []
@@ -346,19 +297,17 @@ def asociar_personas_sillas(personas, sillas):
         persona_id = coincidencia["persona"]
         silla_id = coincidencia["silla"]
 
-        if (
-            persona_id in personas_asignadas
-            or silla_id in sillas_asignadas
-        ):
-            coincidencia["asignada"] = False
-            continue
+        asignada = (
+            persona_id not in personas_asignadas
+            and silla_id not in sillas_asignadas
+        )
 
-        coincidencia["asignada"] = True
+        coincidencia["asignada"] = asignada
 
-        personas_asignadas.add(persona_id)
-        sillas_asignadas.add(silla_id)
-
-        asignaciones.append(dict(coincidencia))
+        if asignada:
+            personas_asignadas.add(persona_id)
+            sillas_asignadas.add(silla_id)
+            asignaciones.append(dict(coincidencia))
 
     personas_sin_silla = [
         persona["id"]
@@ -382,120 +331,173 @@ def asociar_personas_sillas(personas, sillas):
 
 
 def analizar_imagen(imagen):
-    ancho, alto = imagen.size
-    area_imagen = max(ancho * alto, 1)
+    """
+    Analiza la fotografía una sola vez con YOLO.
+    Admite candidatas de silla de baja confianza cuando
+    hay una persona sin silla y la coincidencia espacial
+    resulta suficientemente clara.
+    """
 
-    contador_ids = [0]
+    detecciones = ejecutar_inferencia(imagen)
 
-    # Primera pasada: imagen completa, personas y sillas.
-    detecciones_completas = ejecutar_yolo(
-        imagen=imagen,
-        clases=[0, 56],
-        confianza=0.05,
-        origen="imagen_completa",
-        contador_ids=contador_ids
-    )
-
-    personas_raw = [
-        d for d in detecciones_completas
-        if (
-            d["clase"] == 0
-            and d["confianza"] >= CONF_PERSONA
+    personas_seleccionadas, duplicados_personas = (
+        filtrar_detecciones(
+            detecciones,
+            clase_objetivo=0,
+            confianza_minima=CONF_PERSONA,
+            usar_iou=True
         )
-    ]
-
-    personas, duplicados_personas = eliminar_duplicados(
-        personas_raw,
-        umbral_contencion=0.85,
-        umbral_iou=UMBRAL_IOU_PERSONA
-    )
-
-    # Las cajas de silla que abarcan gran parte de la imagen
-    # se tratan como sospechosas, no como una silla confirmada.
-    sillas_completas = []
-    cajas_grandes_completas = []
-
-    for deteccion in detecciones_completas:
-        if deteccion["clase"] != 56:
-            continue
-
-        fraccion_area = (
-            area_caja(deteccion["box"]) / area_imagen
-        )
-
-        if fraccion_area > MAX_AREA_SILLA:
-            cajas_grandes_completas.append({
-                "id_modelo": deteccion["id_modelo"],
-                "confianza": round(
-                    deteccion["confianza"], 3
-                ),
-                "origen": deteccion["origen"],
-                "fraccion_area_imagen": round(
-                    fraccion_area, 3
-                ),
-                "motivo": "caja_demasiado_grande",
-                "box": deteccion["box"]
-            })
-            continue
-
-        if deteccion["confianza"] >= CONF_SILLA:
-            sillas_completas.append(deteccion)
-
-    # Solo hacer análisis por recortes si la detección
-    # de la imagen completa parece insuficiente.
-    usar_recortes = (
-        len(sillas_completas) < 2
-        or len(cajas_grandes_completas) > 0
-    )
-
-    detecciones_recortes = []
-    recortes_info = []
-    cajas_grandes_recortes = []
-
-    if usar_recortes:
-        (
-            detecciones_recortes,
-            recortes_info,
-            cajas_grandes_recortes
-        ) = detectar_sillas_en_recortes(
-            imagen,
-            contador_ids
-        )
-
-    candidatas_sillas = (
-        sillas_completas + detecciones_recortes
     )
 
     sillas_seleccionadas, duplicados_sillas = (
-        eliminar_duplicados(
-            candidatas_sillas,
-            umbral_contencion=0.82,
-            umbral_iou=UMBRAL_IOU_SILLA
+        filtrar_detecciones(
+            detecciones,
+            clase_objetivo=56,
+            confianza_minima=CONF_SILLA,
+            usar_iou=False
         )
     )
 
-    # Numerar los objetos finales después de eliminar duplicados.
-    personas_finales = [
+    personas = [
         {
             "id": indice + 1,
             "id_modelo": d["id_modelo"],
-            "confidence": d["confianza"],
             "box": d["box"],
-            "origen": d["origen"]
+            "confidence": d["confianza"]
         }
-        for indice, d in enumerate(personas)
+        for indice, d in enumerate(personas_seleccionadas)
     ]
 
-    sillas_finales = [
+    sillas = [
         {
             "id": indice + 1,
             "id_modelo": d["id_modelo"],
-            "confidence": d["confianza"],
             "box": d["box"],
-            "origen": d["origen"]
+            "confidence": d["confianza"],
+            "origen": "modelo",
+            "respaldada_por_persona": None
         }
         for indice, d in enumerate(sillas_seleccionadas)
     ]
+
+    (
+        _,
+        asignaciones_iniciales,
+        _,
+        personas_pendientes,
+        _
+    ) = asociar_personas_sillas(personas, sillas)
+
+    candidatas_bajas = [
+        dict(d)
+        for d in detecciones
+        if (
+            d["clase"] == 56
+            and CONF_SILLA_OCULTA <= d["confianza"] < CONF_SILLA
+        )
+    ]
+
+    candidatas_bajas.sort(
+        key=lambda d: d["confianza"],
+        reverse=True
+    )
+
+    cajas_procesadas = list(sillas)
+    personas_pendientes = set(personas_pendientes)
+
+    diagnostico_candidatas = []
+    duplicados_bajos = []
+
+    for candidata in candidatas_bajas:
+        duplicado = buscar_duplicado_silla(
+            candidata,
+            cajas_procesadas
+        )
+
+        if duplicado is not None:
+            referencia = duplicado["referencia"]
+
+            duplicados_bajos.append({
+                "id_modelo": candidata["id_modelo"],
+                "clase": "silla",
+                "confianza": round(
+                    candidata["confianza"], 3
+                ),
+                "duplicado_de": referencia["id_modelo"],
+                "contencion": round(
+                    duplicado["contencion"], 3
+                ),
+                "iou": round(duplicado["iou"], 3)
+            })
+
+            diagnostico_candidatas.append({
+                "id_modelo": candidata["id_modelo"],
+                "confianza": round(
+                    candidata["confianza"], 3
+                ),
+                "resultado": "duplicada",
+                "persona_relacionada": None
+            })
+
+            # Registrar también las candidatas descartadas
+            # para no reintroducir cajas prácticamente idénticas.
+            cajas_procesadas.append(candidata)
+            continue
+
+        persona_soporte = None
+        mejor_solapamiento = 0.0
+
+        for persona in personas:
+            if persona["id"] not in personas_pendientes:
+                continue
+
+            solapamiento = contencion_cajas(
+                candidata["box"],
+                persona["box"]
+            )
+
+            if (
+                solapamiento >= UMBRAL_SILLA_OCULTA
+                and solapamiento > mejor_solapamiento
+            ):
+                mejor_solapamiento = solapamiento
+                persona_soporte = persona["id"]
+
+        if persona_soporte is not None:
+            nueva_silla = {
+                "id": len(sillas) + 1,
+                "id_modelo": candidata["id_modelo"],
+                "box": candidata["box"],
+                "confidence": candidata["confianza"],
+                "origen": "candidata_oculta",
+                "respaldada_por_persona": persona_soporte
+            }
+
+            sillas.append(nueva_silla)
+            personas_pendientes.remove(persona_soporte)
+
+            diagnostico_candidatas.append({
+                "id_modelo": candidata["id_modelo"],
+                "confianza": round(
+                    candidata["confianza"], 3
+                ),
+                "resultado": "promovida_por_solapamiento",
+                "persona_relacionada": persona_soporte,
+                "solapamiento": round(
+                    mejor_solapamiento, 3
+                )
+            })
+        else:
+            diagnostico_candidatas.append({
+                "id_modelo": candidata["id_modelo"],
+                "confianza": round(
+                    candidata["confianza"], 3
+                ),
+                "resultado": "sin_persona_sin_silla_compatible",
+                "persona_relacionada": None
+            })
+
+        cajas_procesadas.append(candidata)
 
     (
         ocupadas,
@@ -503,61 +505,49 @@ def analizar_imagen(imagen):
         coincidencias,
         personas_sin_silla,
         sillas_sin_persona
-    ) = asociar_personas_sillas(
-        personas_finales,
-        sillas_finales
-    )
+    ) = asociar_personas_sillas(personas, sillas)
 
-    total_personas = len(personas_finales)
-    total_sillas = len(sillas_finales)
-
+    total_personas = len(personas)
+    total_sillas = len(sillas)
     libres = max(total_sillas - ocupadas, 0)
 
     estado = "vacio" if total_personas == 0 else "ocupado"
 
-    ids_personas = {
-        d["id_modelo"] for d in personas_finales
+    ids_incluidos = {
+        p["id_modelo"] for p in personas
+    } | {
+        s["id_modelo"] for s in sillas
     }
 
-    ids_sillas = {
-        d["id_modelo"] for d in sillas_finales
+    duplicados = duplicados_personas + duplicados_sillas + duplicados_bajos
+
+    duplicado_por_id = {
+        d["id_modelo"]: d["duplicado_de"]
+        for d in duplicados
     }
 
-    diagnostico_completo = []
+    diagnostico_detecciones = []
 
-    for d in detecciones_completas:
-        incluido = (
-            d["id_modelo"] in ids_personas
-            if d["clase"] == 0
-            else d["id_modelo"] in ids_sillas
-        )
+    for d in detecciones:
+        clase = d["clase"]
+        umbral = CONF_PERSONA if clase == 0 else CONF_SILLA
 
-        diagnostico_completo.append({
+        diagnostico_detecciones.append({
             "id_modelo": d["id_modelo"],
-            "clase": "persona" if d["clase"] == 0 else "silla",
+            "clase": "persona" if clase == 0 else "silla",
             "confianza": round(d["confianza"], 3),
-            "incluida_en_conteo": incluido,
-            "origen": d["origen"],
+            "umbral_conteo_normal": umbral,
+            "supera_umbral": d["confianza"] >= umbral,
+            "incluida_en_conteo": (
+                d["id_modelo"] in ids_incluidos
+            ),
+            "duplicado_de": duplicado_por_id.get(
+                d["id_modelo"]
+            ),
             "caja": [
                 round(v, 1) for v in d["box"]
             ]
         })
-
-    diagnostico_recortes = [
-        {
-            "id_modelo": d["id_modelo"],
-            "confianza": round(d["confianza"], 3),
-            "incluida_en_conteo": (
-                d["id_modelo"] in ids_sillas
-            ),
-            "origen": d["origen"],
-            "fraccion_area_imagen": d["fraccion_area_imagen"],
-            "caja": [
-                round(v, 1) for v in d["box"]
-            ]
-        }
-        for d in detecciones_recortes
-    ]
 
     respuesta = {
         "personas": total_personas,
@@ -566,40 +556,37 @@ def analizar_imagen(imagen):
         "libres": libres,
         "estado": estado,
         "diagnostico": {
-            "recortes_activados": usar_recortes,
-            "recortes": recortes_info,
-            "detecciones_imagen_completa": diagnostico_completo,
-            "detecciones_recortes": diagnostico_recortes,
+            "inferencias_yolo": 1,
+            "detecciones_modelo": diagnostico_detecciones,
             "personas_detectadas": [
                 {
-                    "id": d["id"],
-                    "id_modelo": d["id_modelo"],
-                    "confianza": round(d["confidence"], 3),
+                    "id": p["id"],
+                    "id_modelo": p["id_modelo"],
+                    "confianza": round(p["confidence"], 3),
                     "caja": [
-                        round(v, 1) for v in d["box"]
+                        round(v, 1) for v in p["box"]
                     ]
                 }
-                for d in personas_finales
+                for p in personas
             ],
             "sillas_detectadas": [
                 {
-                    "id": d["id"],
-                    "id_modelo": d["id_modelo"],
-                    "confianza": round(d["confidence"], 3),
-                    "origen": d["origen"],
+                    "id": s["id"],
+                    "id_modelo": s["id_modelo"],
+                    "confianza": round(s["confidence"], 3),
+                    "origen": s["origen"],
+                    "respaldada_por_persona": (
+                        s["respaldada_por_persona"]
+                    ),
                     "caja": [
-                        round(v, 1) for v in d["box"]
+                        round(v, 1) for v in s["box"]
                     ]
                 }
-                for d in sillas_finales
+                for s in sillas
             ],
-            "duplicados_descartados": (
-                duplicados_personas + duplicados_sillas
-            ),
-            "cajas_grandes_descartadas": (
-                cajas_grandes_completas
-                + cajas_grandes_recortes
-            ),
+            "duplicados_descartados": duplicados,
+            "candidatas_bajas_confianza": diagnostico_candidatas,
+            "asignaciones_iniciales": asignaciones_iniciales,
             "asignaciones": asignaciones,
             "coincidencias_evaluadas": coincidencias,
             "personas_sin_silla": personas_sin_silla,
@@ -607,11 +594,12 @@ def analizar_imagen(imagen):
         }
     }
 
-    del detecciones_completas
-    del detecciones_recortes
-    del candidatas_sillas
+    del detecciones
     del personas
+    del sillas
+    del personas_seleccionadas
     del sillas_seleccionadas
+
     gc.collect()
 
     return respuesta
@@ -637,6 +625,7 @@ async def predict(file: UploadFile = File(...)):
                 detail="La imagen supera el límite de 8 MB"
             )
 
+        # No se crea temp.jpg ni se almacenan las fotos en disco.
         with Image.open(BytesIO(image_bytes)) as original:
             imagen = original.convert("RGB")
 
