@@ -1,65 +1,89 @@
-
 import os
-import gc
+
+# Limitar hilos para reducir consumo de CPU
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+
 import asyncio
+import gc
 import json
 import logging
 import time
 import uuid
-
-# Reducir los hilos utilizados por PyTorch
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
+from pathlib import Path
+from io import BytesIO
 
 import cv2
 import numpy as np
-import torch
+import onnxruntime as ort
 
-from io import BytesIO
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from ultralytics import YOLO
 from PIL import Image, UnidentifiedImageError
+from fastapi import FastAPI, File, UploadFile, HTTPException
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("uvicorn.error")
 
-torch.set_num_threads(1)
-
 app = FastAPI()
 
-# Medir la carga del modelo al iniciar
-inicio_carga_modelo = time.perf_counter()
-model = YOLO("yolo11n.pt")
-CARGA_MODELO_MS = round(
-    (time.perf_counter() - inicio_carga_modelo) * 1000, 2
-)
-
-print(
-    json.dumps({
-        "evento": "modelo_cargado",
-        "modelo": "YOLO11n",
-        "carga_modelo_ms": CARGA_MODELO_MS
-    }),
-    flush=True
-)
-
-# Una sola inferencia a la vez
-prediction_lock = asyncio.Lock()
-
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
+INPUT_SIZE = 320
 CONF_PERSONA = 0.30
+NMS_THRESHOLD = 0.45
 
-# Tonos verdes en espacio HSV
 VERDE_MIN = np.array([25, 40, 35], dtype=np.uint8)
 VERDE_MAX = np.array([95, 255, 255], dtype=np.uint8)
+
+prediction_lock = asyncio.Lock()
+
+# Cargar el modelo ONNX sin PyTorch ni Ultralytics
+MODEL_PATH = Path(__file__).resolve().parent / "yolo11n.onnx"
+
+if not MODEL_PATH.exists():
+    raise FileNotFoundError(
+        f"No se encontró el modelo ONNX: {MODEL_PATH}"
+    )
+
+options = ort.SessionOptions()
+options.intra_op_num_threads = 1
+options.inter_op_num_threads = 1
+options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+options.graph_optimization_level = (
+    ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+)
+
+inicio_carga = time.perf_counter()
+
+session = ort.InferenceSession(
+    str(MODEL_PATH),
+    sess_options=options,
+    providers=["CPUExecutionProvider"]
+)
+
+input_name = session.get_inputs()[0].name
+output_names = [item.name for item in session.get_outputs()]
+
+CARGA_MODELO_MS = round(
+    (time.perf_counter() - inicio_carga) * 1000, 2
+)
+
+logger.info(json.dumps({
+    "evento": "modelo_onnx_cargado",
+    "modelo": MODEL_PATH.name,
+    "carga_modelo_ms": CARGA_MODELO_MS,
+    "input_shape": session.get_inputs()[0].shape,
+    "output_shapes": [
+        item.shape for item in session.get_outputs()
+    ]
+}))
 
 
 @app.get("/")
 def inicio():
     return {
         "mensaje": "Servidor de tutoria funcionando",
-        "modelo": "YOLO11n + OpenCV",
-        "medicion_tiempos": True
+        "modelo": "YOLO11n ONNX + OpenCV",
+        "carga_modelo_ms": CARGA_MODELO_MS
     }
 
 
@@ -67,92 +91,246 @@ def inicio():
 def health():
     return {
         "estado": "ok",
-        "modelo": "YOLO11n + OpenCV"
+        "modelo": "YOLO11n ONNX + OpenCV"
     }
 
 
-def detectar_personas(imagen):
-    """Detecta personas y mide por separado la inferencia YOLO."""
+def preparar_entrada(imagen_rgb):
+    """
+    Mantener proporciones, rellenar hasta 320x320
+    y normalizar los píxeles para ONNX.
+    """
 
     inicio = time.perf_counter()
-    personas = []
 
-    with torch.inference_mode():
-        resultados = model.predict(
-            source=imagen,
-            conf=CONF_PERSONA,
-            imgsz=416,
-            max_det=20,
-            classes=[0],
-            device="cpu",
-            verbose=False
-        )
+    alto, ancho = imagen_rgb.shape[:2]
+    escala = min(INPUT_SIZE / ancho, INPUT_SIZE / alto)
 
-        for resultado in resultados:
-            if resultado.boxes is None:
-                continue
+    nuevo_ancho = max(1, int(round(ancho * escala)))
+    nuevo_alto = max(1, int(round(alto * escala)))
 
-            for caja in resultado.boxes:
-                x1, y1, x2, y2 = caja.xyxy[0].tolist()
+    redimensionada = cv2.resize(
+        imagen_rgb,
+        (nuevo_ancho, nuevo_alto),
+        interpolation=cv2.INTER_LINEAR
+    )
 
-                personas.append({
-                    "id": len(personas) + 1,
-                    "confianza": float(caja.conf[0]),
-                    "box": [float(x1), float(y1),
-                            float(x2), float(y2)]
-                })
+    izquierda = (INPUT_SIZE - nuevo_ancho) // 2
+    arriba = (INPUT_SIZE - nuevo_alto) // 2
 
-        del resultados
+    derecha = INPUT_SIZE - nuevo_ancho - izquierda
+    abajo = INPUT_SIZE - nuevo_alto - arriba
+
+    entrada = cv2.copyMakeBorder(
+        redimensionada,
+        arriba,
+        abajo,
+        izquierda,
+        derecha,
+        cv2.BORDER_CONSTANT,
+        value=(114, 114, 114)
+    )
+
+    entrada = entrada.astype(np.float32) / 255.0
+    entrada = np.transpose(entrada, (2, 0, 1))
+    entrada = np.expand_dims(entrada, axis=0)
+    entrada = np.ascontiguousarray(entrada)
+
+    escala_x = nuevo_ancho / ancho
+    escala_y = nuevo_alto / alto
 
     tiempo_ms = round(
         (time.perf_counter() - inicio) * 1000, 2
     )
 
-    return personas, tiempo_ms
+    return (
+        entrada,
+        escala_x,
+        escala_y,
+        izquierda,
+        arriba,
+        tiempo_ms
+    )
+
+
+def detectar_personas(imagen):
+    """Ejecuta ONNX Runtime y filtra las detecciones de personas."""
+
+    with imagen.convert("RGB") as rgb:
+        imagen_rgb = np.array(rgb)
+
+    alto_original, ancho_original = imagen_rgb.shape[:2]
+
+    (
+        entrada,
+        escala_x,
+        escala_y,
+        izquierda,
+        arriba,
+        preparacion_ms
+    ) = preparar_entrada(imagen_rgb)
+
+    inicio_inferencia = time.perf_counter()
+
+    outputs = session.run(
+        output_names,
+        {input_name: entrada}
+    )
+
+    inferencia_ms = round(
+        (time.perf_counter() - inicio_inferencia) * 1000, 2
+    )
+
+    inicio_postproceso = time.perf_counter()
+
+    predicciones = np.asarray(outputs[0])
+
+    if predicciones.ndim == 3:
+        predicciones = predicciones[0]
+
+    # El modelo COCO exportado debe producir 4 coordenadas
+    # y 80 puntuaciones de clase.
+    if predicciones.shape[0] < predicciones.shape[1]:
+        predicciones = predicciones.T
+
+    if predicciones.shape[1] != 84:
+        raise RuntimeError(
+            "Salida ONNX inesperada. "
+            f"Se esperaba 84 valores por detección; "
+            f"se recibió {predicciones.shape[1]}."
+        )
+
+    puntuaciones = predicciones[:, 4]
+    indices = np.flatnonzero(
+        puntuaciones >= CONF_PERSONA
+    )
+
+    cajas_nms = []
+    confianzas = []
+    cajas_originales = []
+
+    for indice in indices:
+        centro_x, centro_y, ancho, alto = (
+            predicciones[indice, :4].astype(float)
+        )
+
+        x1_modelo = centro_x - ancho / 2
+        y1_modelo = centro_y - alto / 2
+        x2_modelo = centro_x + ancho / 2
+        y2_modelo = centro_y + alto / 2
+
+        cajas_nms.append([
+            int(round(x1_modelo)),
+            int(round(y1_modelo)),
+            max(1, int(round(ancho))),
+            max(1, int(round(alto)))
+        ])
+
+        confianzas.append(float(puntuaciones[indice]))
+
+        x1 = (x1_modelo - izquierda) / escala_x
+        y1 = (y1_modelo - arriba) / escala_y
+        x2 = (x2_modelo - izquierda) / escala_x
+        y2 = (y2_modelo - arriba) / escala_y
+
+        cajas_originales.append([
+            float(np.clip(x1, 0, ancho_original)),
+            float(np.clip(y1, 0, alto_original)),
+            float(np.clip(x2, 0, ancho_original)),
+            float(np.clip(y2, 0, alto_original))
+        ])
+
+    personas = []
+
+    if cajas_nms:
+        indices_nms = cv2.dnn.NMSBoxes(
+            cajas_nms,
+            confianzas,
+            CONF_PERSONA,
+            NMS_THRESHOLD
+        )
+
+        if indices_nms is not None and len(indices_nms) > 0:
+            for indice in np.asarray(indices_nms).reshape(-1):
+                x1, y1, x2, y2 = cajas_originales[int(indice)]
+
+                if x2 <= x1 or y2 <= y1:
+                    continue
+
+                personas.append({
+                    "id": len(personas) + 1,
+                    "confianza": round(
+                        confianzas[int(indice)], 4
+                    ),
+                    "box": [x1, y1, x2, y2]
+                })
+
+    postproceso_ms = round(
+        (time.perf_counter() - inicio_postproceso) * 1000, 2
+    )
+
+    tiempos = {
+        "preparacion_entrada_ms": preparacion_ms,
+        "yolo_inferencia_ms": inferencia_ms,
+        "yolo_postproceso_ms": postproceso_ms
+    }
+
+    tiempos["yolo_total_ms"] = round(
+        preparacion_ms + inferencia_ms + postproceso_ms,
+        2
+    )
+
+    del outputs, predicciones, entrada, imagen_rgb
+    gc.collect()
+
+    return personas, tiempos
 
 
 def detectar_sillas_verdes(imagen):
-    """
-    Busca componentes de color verde con OpenCV.
-    Este método se mantiene sin cambios para medir
-    el rendimiento real de la versión actual.
-    """
+    """Detectar componentes verdes con OpenCV."""
 
-    imagen_rgb = np.asarray(imagen)
+    inicio = time.perf_counter()
+
+    with imagen.convert("RGB") as rgb:
+        imagen_rgb = np.array(rgb)
+
     alto, ancho = imagen_rgb.shape[:2]
     area_imagen = max(ancho * alto, 1)
 
     imagen_hsv = cv2.cvtColor(
-        imagen_rgb, cv2.COLOR_RGB2HSV
+        imagen_rgb,
+        cv2.COLOR_RGB2HSV
     )
 
     mascara = cv2.inRange(
-        imagen_hsv, VERDE_MIN, VERDE_MAX
-    )
-
-    kernel_apertura = np.ones((3, 3), dtype=np.uint8)
-    kernel_cierre = np.ones((5, 5), dtype=np.uint8)
-
-    mascara = cv2.morphologyEx(
-        mascara, cv2.MORPH_OPEN, kernel_apertura
+        imagen_hsv,
+        VERDE_MIN,
+        VERDE_MAX
     )
 
     mascara = cv2.morphologyEx(
-        mascara, cv2.MORPH_CLOSE, kernel_cierre
+        mascara,
+        cv2.MORPH_OPEN,
+        np.ones((3, 3), dtype=np.uint8)
+    )
+
+    mascara = cv2.morphologyEx(
+        mascara,
+        cv2.MORPH_CLOSE,
+        np.ones((5, 5), dtype=np.uint8)
     )
 
     cantidad, etiquetas, estadisticas, centroides = (
         cv2.connectedComponentsWithStats(
-            mascara, connectivity=8
+            mascara,
+            connectivity=8
         )
     )
 
-    area_minima = max(
-        120, int(area_imagen * 0.0008)
-    )
+    area_minima = max(120, int(area_imagen * 0.0008))
 
     sillas = []
-    componentes_descartados = []
+    descartados = []
 
     for indice in range(1, cantidad):
         x = int(estadisticas[indice, cv2.CC_STAT_LEFT])
@@ -161,10 +339,10 @@ def detectar_sillas_verdes(imagen):
         h = int(estadisticas[indice, cv2.CC_STAT_HEIGHT])
         area = int(estadisticas[indice, cv2.CC_STAT_AREA])
 
-        centro_x, centro_y = centroides[indice]
+        cx, cy = centroides[indice]
 
         if area < area_minima or w < 8 or h < 8:
-            componentes_descartados.append({
+            descartados.append({
                 "area_pixeles": area,
                 "caja": [x, y, x + w, y + h],
                 "motivo": "componente_demasiado_pequeno"
@@ -185,21 +363,24 @@ def detectar_sillas_verdes(imagen):
             "area_verde": area,
             "proporcion_verde": round(proporcion_verde, 3),
             "centro": [
-                round(float(centro_x), 1),
-                round(float(centro_y), 1)
+                round(float(cx), 1),
+                round(float(cy), 1)
             ]
         })
 
     diagnostico = {
         "componentes_verdes_totales": cantidad - 1,
         "area_minima_pixeles": area_minima,
-        "componentes_descartados": componentes_descartados
+        "componentes_descartados": descartados
     }
 
-    del imagen_hsv, mascara, etiquetas
-    gc.collect()
+    tiempo_ms = round(
+        (time.perf_counter() - inicio) * 1000, 2
+    )
 
-    return sillas, diagnostico
+    del imagen_rgb, imagen_hsv, mascara, etiquetas
+
+    return sillas, diagnostico, tiempo_ms
 
 
 def interseccion_cajas(box_a, box_b):
@@ -241,28 +422,30 @@ def relacion_persona_silla(persona_box, silla_box):
 
     alto_persona = max(py2 - py1, 1)
 
-    zona_inferior_persona = [
-        px1, py1 + alto_persona * 0.35, px2, py2
+    zona_inferior = [
+        px1,
+        py1 + alto_persona * 0.35,
+        px2,
+        py2
     ]
 
-    interseccion_total = interseccion_cajas(
-        persona_box, silla_expandida
+    inter_total = interseccion_cajas(
+        persona_box,
+        silla_expandida
     )
 
-    interseccion_inferior = interseccion_cajas(
-        zona_inferior_persona, silla_expandida
+    inter_inferior = interseccion_cajas(
+        zona_inferior,
+        silla_expandida
     )
 
     area_persona = max(area_caja(persona_box), 1)
     area_silla = max(area_caja(silla_expandida), 1)
 
-    total = interseccion_total / min(
-        area_persona, area_silla
+    return max(
+        inter_total / min(area_persona, area_silla),
+        inter_inferior / area_silla
     )
-
-    inferior = interseccion_inferior / area_silla
-
-    return max(total, inferior)
 
 
 def asociar_personas_sillas(personas, sillas):
@@ -271,7 +454,8 @@ def asociar_personas_sillas(personas, sillas):
     for persona in personas:
         for silla in sillas:
             puntuacion = relacion_persona_silla(
-                persona["box"], silla["box"]
+                persona["box"],
+                silla["box"]
             )
 
             if puntuacion >= 0.05:
@@ -306,36 +490,28 @@ def asociar_personas_sillas(personas, sillas):
             sillas_asignadas.add(silla_id)
             asignaciones.append(dict(candidato))
 
-    personas_sin_silla = [
-        p["id"] for p in personas
-        if p["id"] not in personas_asignadas
-    ]
-
-    sillas_sin_persona = [
-        s["id"] for s in sillas
-        if s["id"] not in sillas_asignadas
-    ]
-
     return (
         len(sillas_asignadas),
         asignaciones,
         candidatos,
-        personas_sin_silla,
-        sillas_sin_persona
+        [
+            p["id"] for p in personas
+            if p["id"] not in personas_asignadas
+        ],
+        [
+            s["id"] for s in sillas
+            if s["id"] not in sillas_asignadas
+        ]
     )
 
 
 def analizar_imagen(imagen):
-    """Mide por separado YOLO, OpenCV, asociación y análisis total."""
-
     inicio_analisis = time.perf_counter()
 
-    personas, yolo_ms = detectar_personas(imagen)
+    personas, tiempos_yolo = detectar_personas(imagen)
 
-    inicio_opencv = time.perf_counter()
-    sillas, diagnostico_verde = detectar_sillas_verdes(imagen)
-    opencv_ms = round(
-        (time.perf_counter() - inicio_opencv) * 1000, 2
+    sillas, diagnostico_verde, opencv_ms = (
+        detectar_sillas_verdes(imagen)
     )
 
     inicio_asociacion = time.perf_counter()
@@ -349,28 +525,35 @@ def analizar_imagen(imagen):
     ) = asociar_personas_sillas(personas, sillas)
 
     asociacion_ms = round(
-        (time.perf_counter() - inicio_asociacion) * 1000, 2
+        (time.perf_counter() - inicio_asociacion) * 1000,
+        2
     )
 
     total_personas = len(personas)
     total_sillas = len(sillas)
     libres = max(total_sillas - ocupadas, 0)
 
-    estado = "vacio" if total_personas == 0 else "ocupado"
+    tiempos = dict(tiempos_yolo)
+    tiempos["opencv_sillas_ms"] = opencv_ms
+    tiempos["asociacion_ms"] = asociacion_ms
+    tiempos["analisis_total_ms"] = round(
+        (time.perf_counter() - inicio_analisis) * 1000, 2
+    )
 
     respuesta = {
         "personas": total_personas,
         "sillas": total_sillas,
         "ocupadas": ocupadas,
         "libres": libres,
-        "estado": estado,
+        "estado": "vacio" if total_personas == 0 else "ocupado",
         "diagnostico": {
-            "metodo_personas": "YOLO11n",
+            "metodo_personas": "YOLO11n ONNX Runtime",
             "metodo_sillas": "OpenCV HSV verde",
+            "inferencias_yolo": 1,
             "personas_detectadas": [
                 {
                     "id": p["id"],
-                    "confianza": round(p["confianza"], 3),
+                    "confianza": p["confianza"],
                     "caja": [round(v, 1) for v in p["box"]]
                 }
                 for p in personas
@@ -390,16 +573,8 @@ def analizar_imagen(imagen):
             "personas_sin_silla": personas_sin_silla,
             "sillas_sin_persona": sillas_sin_persona
         },
-        "tiempos_ms": {
-            "yolo_inferencia_ms": yolo_ms,
-            "opencv_sillas_ms": opencv_ms,
-            "asociacion_ms": asociacion_ms
-        }
+        "tiempos_ms": tiempos
     }
-
-    respuesta["tiempos_ms"]["analisis_total_ms"] = round(
-        (time.perf_counter() - inicio_analisis) * 1000, 2
-    )
 
     del personas, sillas
     gc.collect()
@@ -415,13 +590,10 @@ async def predict(file: UploadFile = File(...)):
     imagen = None
     image_bytes = b""
 
-    lectura_ms = 0
-    decodificacion_ms = 0
-    espera_lock_ms = 0
-
     try:
         inicio_lectura = time.perf_counter()
         image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
+
         lectura_ms = round(
             (time.perf_counter() - inicio_lectura) * 1000, 2
         )
@@ -446,7 +618,8 @@ async def predict(file: UploadFile = File(...)):
         imagen.thumbnail((640, 640))
 
         decodificacion_ms = round(
-            (time.perf_counter() - inicio_decodificacion) * 1000, 2
+            (time.perf_counter() - inicio_decodificacion) * 1000,
+            2
         )
 
         inicio_espera = time.perf_counter()
@@ -457,11 +630,11 @@ async def predict(file: UploadFile = File(...)):
             )
 
             respuesta = await asyncio.to_thread(
-                analizar_imagen, imagen
+                analizar_imagen,
+                imagen
             )
 
         tiempos = respuesta["tiempos_ms"]
-
         tiempos["lectura_bytes_ms"] = lectura_ms
         tiempos["decodificacion_imagen_ms"] = decodificacion_ms
         tiempos["espera_turno_ms"] = espera_lock_ms
@@ -469,27 +642,17 @@ async def predict(file: UploadFile = File(...)):
             (time.perf_counter() - inicio_api) * 1000, 2
         )
 
-        registro = {
+        logger.info(json.dumps({
             "evento": "predict_completado",
             "request_id": request_id,
+            "tiempos_ms": tiempos,
             "personas": respuesta["personas"],
-            "sillas": respuesta["sillas"],
-            "tiempos_ms": tiempos
-        }
-
-        logger.info(json.dumps(registro))
+            "sillas": respuesta["sillas"]
+        }))
 
         return respuesta
 
-    except HTTPException as error:
-        logger.warning(json.dumps({
-            "evento": "predict_http_error",
-            "request_id": request_id,
-            "status_code": error.status_code,
-            "api_total_ms": round(
-                (time.perf_counter() - inicio_api) * 1000, 2
-            )
-        }))
+    except HTTPException:
         raise
 
     except UnidentifiedImageError:
@@ -503,9 +666,10 @@ async def predict(file: UploadFile = File(...)):
             "evento": "predict_error",
             "request_id": request_id
         }))
+
         raise HTTPException(
             status_code=500,
-            detail="Error procesando la imagen. Revisa los logs del servidor."
+            detail="Error procesando la imagen. Revisa los logs."
         )
 
     finally:
