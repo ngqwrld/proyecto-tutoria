@@ -1,3 +1,4 @@
+
 import os
 
 # Limitar hilos para reducir consumo de CPU
@@ -36,7 +37,6 @@ VERDE_MAX = np.array([95, 255, 255], dtype=np.uint8)
 
 prediction_lock = asyncio.Lock()
 
-# Cargar el modelo ONNX sin PyTorch ni Ultralytics
 MODEL_PATH = Path(__file__).resolve().parent / "yolo11n.onnx"
 
 if not MODEL_PATH.exists():
@@ -96,10 +96,7 @@ def health():
 
 
 def preparar_entrada(imagen_rgb):
-    """
-    Mantener proporciones, rellenar hasta 320x320
-    y normalizar los píxeles para ONNX.
-    """
+    """Redimensionar y rellenar la imagen hasta 320x320."""
 
     inicio = time.perf_counter()
 
@@ -117,7 +114,6 @@ def preparar_entrada(imagen_rgb):
 
     izquierda = (INPUT_SIZE - nuevo_ancho) // 2
     arriba = (INPUT_SIZE - nuevo_alto) // 2
-
     derecha = INPUT_SIZE - nuevo_ancho - izquierda
     abajo = INPUT_SIZE - nuevo_alto - arriba
 
@@ -154,7 +150,7 @@ def preparar_entrada(imagen_rgb):
 
 
 def detectar_personas(imagen):
-    """Ejecuta ONNX Runtime y filtra las detecciones de personas."""
+    """Ejecutar ONNX Runtime y extraer las personas detectadas."""
 
     with imagen.convert("RGB") as rgb:
         imagen_rgb = np.array(rgb)
@@ -188,18 +184,18 @@ def detectar_personas(imagen):
     if predicciones.ndim == 3:
         predicciones = predicciones[0]
 
-    # El modelo COCO exportado debe producir 4 coordenadas
-    # y 80 puntuaciones de clase.
+    # La salida esperada de YOLO11n COCO es 84x2100
+    # o 2100x84: 4 coordenadas y 80 clases.
     if predicciones.shape[0] < predicciones.shape[1]:
         predicciones = predicciones.T
 
     if predicciones.shape[1] != 84:
         raise RuntimeError(
-            "Salida ONNX inesperada. "
-            f"Se esperaba 84 valores por detección; "
-            f"se recibió {predicciones.shape[1]}."
+            "Formato de salida ONNX inesperado: "
+            f"{predicciones.shape}"
         )
 
+    # Clase 0 = persona; YOLO11 no usa objectness separado aquí.
     puntuaciones = predicciones[:, 4]
     indices = np.flatnonzero(
         puntuaciones >= CONF_PERSONA
@@ -272,13 +268,11 @@ def detectar_personas(imagen):
     tiempos = {
         "preparacion_entrada_ms": preparacion_ms,
         "yolo_inferencia_ms": inferencia_ms,
-        "yolo_postproceso_ms": postproceso_ms
+        "yolo_postproceso_ms": postproceso_ms,
+        "yolo_total_ms": round(
+            preparacion_ms + inferencia_ms + postproceso_ms, 2
+        )
     }
-
-    tiempos["yolo_total_ms"] = round(
-        preparacion_ms + inferencia_ms + postproceso_ms,
-        2
-    )
 
     del outputs, predicciones, entrada, imagen_rgb
     gc.collect()
@@ -287,7 +281,7 @@ def detectar_personas(imagen):
 
 
 def detectar_sillas_verdes(imagen):
-    """Detectar componentes verdes con OpenCV."""
+    """Detectar regiones verdes con OpenCV."""
 
     inicio = time.perf_counter()
 
@@ -327,7 +321,10 @@ def detectar_sillas_verdes(imagen):
         )
     )
 
-    area_minima = max(120, int(area_imagen * 0.0008))
+    area_minima = max(
+        120,
+        int(area_imagen * 0.0008)
+    )
 
     sillas = []
     descartados = []
@@ -400,6 +397,7 @@ def interseccion_cajas(box_a, box_b):
 
 def area_caja(box):
     x1, y1, x2, y2 = box
+
     return (
         max(0.0, x2 - x1)
         * max(0.0, y2 - y1)
@@ -514,6 +512,7 @@ def analizar_imagen(imagen):
         detectar_sillas_verdes(imagen)
     )
 
+    # Corregido: medir la asociación desde su propio inicio.
     inicio_asociacion = time.perf_counter()
 
     (
@@ -626,7 +625,8 @@ async def predict(file: UploadFile = File(...)):
 
         async with prediction_lock:
             espera_lock_ms = round(
-                (time.perf_counter() - inicio_espera) * 1000, 2
+                (time.perf_counter() - inicio_espera) * 1000,
+                2
             )
 
             respuesta = await asyncio.to_thread(
