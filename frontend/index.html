@@ -361,7 +361,7 @@
               <div class="floor-main-corridor" aria-label="Pasillo principal, más amplio para circulación entre zonas"><span class="corridor-end"></span><span class="corridor-main-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12h16m-6-6 6 6-6 6M4 6v12"/></svg></span><strong>Pasillo principal</strong><small>Circulación entre zonas</small><span class="corridor-end"></span></div>
               <section class="floor-wing floor-wing-south" aria-label="Bloque inferior de módulos">
                 <div class="floor-row floor-row-south-top" id="mapSouthTop" aria-label="Primera fila zona sur"></div>
-                <div class="floor-corridor floor-corridor-inner"><span class="corridor-arrow">↔</span><span>Pasillo de circulación</span><span class="corridor-arrow">↔</span></div>
+                <div class="floor-corridor floor-corridor-inner"><span class="corridor-arrow">↔</span><span>Pasillo interno</span><span class="corridor-arrow">↔</span></div>
                 <div class="floor-row floor-row-south-bottom" id="mapSouthBottom" aria-label="Segunda fila zona sur"></div>
               </section>
               <section class="floor-overflow" id="mapExtraArea" hidden aria-label="Módulos adicionales"><div class="floor-overflow-heading"><strong>Módulos adicionales</strong><span>Espacios agregados fuera del plano base</span></div><div class="floor-overflow-grid" id="mapExtraRooms"></div></section>
@@ -586,9 +586,12 @@
       else{
         for(let i=0;i<chairs;i++){
           const occupied=i<used,angle=(-90+(360*i/chairs))*Math.PI/180;
-          const narrow=grid.offsetWidth>0&&grid.offsetWidth<340;
-          const rx=narrow?27:35, ry=narrow?24:31;
-          const x=50+rx*Math.cos(angle),y=53+ry*Math.sin(angle);
+          const planW=grid.offsetWidth||300;
+          const seatPx=54; /* ancho de la silla en px */
+          const maxRxPx=planW/2 - seatPx/2 - 6; /* margen de 6px */
+          const rxPct=Math.min(35, (maxRxPx/planW)*100);
+          const ryPct=rxPct*0.89;
+          const x=50+rxPct*Math.cos(angle),y=53+ryPct*Math.sin(angle);
           const card=document.createElement("article");card.className="seat-card "+(occupied?"occupied":"available");card.style.setProperty("--seat-x",`${x}%`);card.style.setProperty("--seat-y",`${y}%`);card.setAttribute("aria-label",`Silla ${i+1}: ${occupied?"ocupada":"disponible"}`);card.title=`Silla ${i+1}: ${occupied?"ocupada":"disponible"}`;
           const number=document.createElement("span");number.className="seat-number";number.textContent=String(i+1).padStart(2,"0");
           const statusmark=document.createElement("span");statusmark.className="seat-status-mark";statusmark.innerHTML=occupied?'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3.2 3.2L13 4.8"/></svg>':'';
