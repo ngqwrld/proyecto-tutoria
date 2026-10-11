@@ -586,7 +586,9 @@
       else{
         for(let i=0;i<chairs;i++){
           const occupied=i<used,angle=(-90+(360*i/chairs))*Math.PI/180;
-          const x=50+35*Math.cos(angle),y=53+31*Math.sin(angle);
+          const narrow=grid.offsetWidth>0&&grid.offsetWidth<340;
+          const rx=narrow?27:35, ry=narrow?24:31;
+          const x=50+rx*Math.cos(angle),y=53+ry*Math.sin(angle);
           const card=document.createElement("article");card.className="seat-card "+(occupied?"occupied":"available");card.style.setProperty("--seat-x",`${x}%`);card.style.setProperty("--seat-y",`${y}%`);card.setAttribute("aria-label",`Silla ${i+1}: ${occupied?"ocupada":"disponible"}`);card.title=`Silla ${i+1}: ${occupied?"ocupada":"disponible"}`;
           const number=document.createElement("span");number.className="seat-number";number.textContent=String(i+1).padStart(2,"0");
           const statusmark=document.createElement("span");statusmark.className="seat-status-mark";statusmark.innerHTML=occupied?'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 8 3.2 3.2L13 4.8"/></svg>':'';
