@@ -364,7 +364,7 @@
       <div>
         <span class="eyebrow">Disponibilidad en tiempo real</span>
         <h2 id="heroTitle">Encuentra un <span class="hl">lugar para estudiar</span>.</h2>
-        <p>Una cámara con visión artificial cuenta personas y sillas en cada módulo. Mira al instante dónde hay espacio libre antes de desplazarte.</p>
+        <p>Una cámara con visión artificial cuenta las personas en cada módulo y calcula las sillas libres. Mira al instante dónde hay espacio libre antes de desplazarte.</p>
         <div class="hero-actions">
           <a class="btn btn-primary shine chain-trigger" href="#mapa">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Zm0 0v14m6-12v14"/></svg><span>Ver el mapa</span>
@@ -501,7 +501,7 @@
     const SUPABASE_URL = "https://prxwwzgoklwjdciwuvdd.supabase.co";
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_otBd9oTl_hiOKmfmSsGx0Q_lv44OXem";
     const SUPABASE_JS_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4";
-    const DEFAULT_MODULES = ["1", "2"]; // Módulos que tienen monitoreo configurado inicialmente.
+    const DEFAULT_MODULES = ["1"]; // Respaldo si no se puede leer la tabla modulos de Supabase.
     const FLOOR_LAYOUT = {
       northTop: ["29", "28", "27", "26"],
       northBottom: ["25", "24", "23", "22", "21"],
@@ -512,11 +512,10 @@
     const REFRESH_FALLBACK_MS = 20000;
     const REFRESH_SAFETY_MS = 180000;
     const MAX_CHART_POINTS = 24;
-    const CACHE_KEY = "uts-ocupacion-cache-v1";
+    const CACHE_KEY = "uts-ocupacion-cache-v2"; // v2: sillas con capacidad fija
 
-    // Máximo de sillas que muestra la página por módulo. Si la cámara detecta más,
-    // se muestran solo estas; si detecta menos, se muestran las que haya.
-    // Para cambiar el límite, edita solo este número.
+    // Las sillas de cada módulo vienen de su capacidad fija (tabla modulos en Supabase).
+    // Este número solo limita cuántas sillas se dibujan en la sala 3D.
     const MAX_SILLAS_VISIBLES = 4;
     window.MAX_SILLAS_VISIBLES = MAX_SILLAS_VISIBLES; // la sala 3D lee este mismo valor
 
@@ -527,6 +526,7 @@
     let allRecords = [], selectedModule = "1", isRefreshing = false, refreshPending = false;
     let realtimeConnected = false;
     let moduleIds = [...new Set([...DEFAULT_MODULES, ...FLOOR_LAYOUT_IDS])];
+    let activeModules = new Set(DEFAULT_MODULES); // se actualiza con la tabla modulos
 
     // ---------- Utilidades ----------
     function safeNumber(v){const n=Number(v);return Number.isFinite(n)?Math.max(0,n):0}
@@ -538,7 +538,7 @@
     function moduleFromOrigin(origin){const m=normalize(origin).match(/(?:modulo|module|aula|camara|camera|cam|esp32-cam|esp32cam|sensor)-?(\d+)(?:-|$)/);return m?String(Number(m[1])):"1"}
     function recordsForModule(id=selectedModule){return allRecords.filter(r=>moduleFromOrigin(r.origen)===String(id))}
     function latestFor(id){return recordsForModule(id)[0]||null}
-    function monitoredSet(){const s=new Set(DEFAULT_MODULES);allRecords.forEach(r=>s.add(moduleFromOrigin(r.origen)));return s}
+    function monitoredSet(){const s=new Set(activeModules);allRecords.forEach(r=>s.add(moduleFromOrigin(r.origen)));return s}
     function setDot(id,state){$(id).className="dot"+(state?" "+state:"")}
     function setApiStatus(ok,text){setDot("apiDot",ok?"ok":"bad");$("apiStatus").textContent=text}
     function setRealtimeStatus(ok,text){setDot("realtimeDot",ok?"ok":"bad");$("realtimeStatus").textContent=text}
@@ -547,6 +547,15 @@
     function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
     function readStorage(key){try{return localStorage.getItem(key)}catch(_){return null}}
     function writeStorage(key,value){try{localStorage.setItem(key,value)}catch(_){}}
+    async function fetchActiveModules(){
+      // Lectura pública permitida por RLS (política "Lectura publica modulos").
+      try{
+        const r=await fetch(`${SUPABASE_URL}/rest/v1/modulos?select=id,activo`,{cache:"no-store",headers:{apikey:SUPABASE_PUBLISHABLE_KEY,Accept:"application/json"}});
+        if(!r.ok)return;
+        const rows=await r.json();
+        if(Array.isArray(rows)&&rows.length)activeModules=new Set(rows.filter(m=>m.activo).map(m=>String(m.id)));
+      }catch(_){/* si falla, se mantiene la lista anterior */}
+    }
     async function fetchJson(path){const r=await fetch(API_BASE_URL+path,{cache:"no-store",headers:{Accept:"application/json"}});if(!r.ok){let d=`Respuesta HTTP ${r.status}`;try{const j=await r.json();if(j?.detail)d=j.detail}catch(_){}throw new Error(d)}return r.json()}
 
     const ICONS={
@@ -690,7 +699,7 @@
       updateFilterCounts();applySearch(false);
     }
     function refreshModuleIds(){
-      const found=new Set([...DEFAULT_MODULES,...FLOOR_LAYOUT_IDS]);allRecords.forEach(r=>found.add(moduleFromOrigin(r.origen)));
+      const found=new Set([...activeModules,...FLOOR_LAYOUT_IDS]);allRecords.forEach(r=>found.add(moduleFromOrigin(r.origen)));
       moduleIds=[...found].sort((a,b)=>Number(a)-Number(b));if(!moduleIds.includes(selectedModule))selectedModule=moduleIds[0]||"1";
     }
 
@@ -715,9 +724,8 @@
       if(!record){empty.hidden=false;empty.innerHTML="<strong>Esperando la primera medición</strong>Las sillas aparecerán alrededor de la mesa cuando llegue el análisis.";$("roomCountTag").textContent="Esperando datos";$("seatSummaryLegend").textContent="Sin conteo";$("seatSummaryText").textContent="";return}
       const total=safeNumber(record.sillas),used=Math.min(total,safeNumber(record.ocupadas)),free=Math.max(0,total-used);
       empty.hidden=total>0&&!room3dFailed;
-      if(total===0)empty.innerHTML="<strong>No se detectaron sillas</strong>La última imagen no permitió reconocer sillas verdes.";
-      const reales=safeNumber(record.sillas_reales??record.sillas);
-      $("roomCountTag").textContent=`${fmt(total)} ${total===1?"silla":"sillas"}${reales>total?` (de ${fmt(reales)} detectadas)`:""}`;
+      if(total===0)empty.innerHTML="<strong>Módulo sin capacidad registrada</strong>Revisa la tabla de módulos en Supabase.";
+      $("roomCountTag").textContent=`${fmt(total)} ${total===1?"silla":"sillas"}`;
       $("seatSummaryLegend").textContent=`${fmt(used)} ocupadas · ${fmt(free)} libres`;
       $("seatSummaryText").textContent=`${fmt(total)} sillas: ${fmt(used)} ocupadas y ${fmt(free)} libres.`;
     }
@@ -763,8 +771,8 @@
       const box=$("recommendation"),icon=$("recommendationIcon"),title=$("recommendationTitle"),text=$("recommendationText");box.className="recommendation";
       if(!r){title.textContent="Esperando la primera medición";text.textContent="Cuando la cámara envíe un análisis, verás si el espacio está vacío, disponible o completo.";icon.innerHTML=ICONS.clock;return}
       const seats=safeNumber(r.sillas),free=safeNumber(r.libres),people=safeNumber(r.personas);
-      if(seats===0){box.classList.add("empty");title.textContent="No se reconocieron sillas";text.textContent="Revisa la iluminación y que las sillas verdes sean visibles en la captura.";icon.innerHTML=ICONS.x}
-      else if(free===0){box.classList.add("full");title.textContent="Módulo completo";text.textContent=`Las ${fmt(seats)} sillas detectadas aparecen ocupadas. Consulta otro módulo en el mapa.`;icon.innerHTML=ICONS.x}
+      if(seats===0){box.classList.add("empty");title.textContent="Módulo sin capacidad registrada";text.textContent="Falta registrar cuántas sillas tiene este módulo.";icon.innerHTML=ICONS.x}
+      else if(free===0){box.classList.add("full");title.textContent="Módulo completo";text.textContent=`Las ${fmt(seats)} sillas están ocupadas. Consulta otro módulo en el mapa.`;icon.innerHTML=ICONS.x}
       else if(people===0){box.classList.add("empty");title.textContent="El espacio se ve vacío";text.textContent=`Hay ${fmt(seats)} sillas y ninguna persona. Tienes ${fmt(free)} lugares disponibles.`;icon.innerHTML=ICONS.check}
       else if(percent>=80){title.textContent="Quedan pocos lugares";text.textContent=`Hay ${fmt(free)} ${free===1?"silla disponible":"sillas disponibles"}. El módulo está cerca de su capacidad.`;icon.innerHTML=ICONS.warn}
       else{title.textContent="Hay espacio disponible";text.textContent=`Se detectaron ${fmt(free)} ${free===1?"silla libre":"sillas libres"}. Puedes ir a este módulo.`;icon.innerHTML=ICONS.check}
@@ -774,7 +782,7 @@
       if(!r){ids.forEach(id=>$(id).textContent="—");$("peopleFoot").textContent="Sin datos para este módulo";$("seatsFoot").textContent="Esperando una captura";$("usedFoot").textContent="Sin ocupación estimada";$("freeFoot").textContent="No se puede calcular";$("occupancyPercent").textContent="—";$("occupancyBar").style.width="0%";$("occupancyProgress").setAttribute("aria-valuenow","0");$("usedProgressLabel").textContent="— ocupadas";$("freeProgressLabel").textContent="— disponibles";$("capacityChip").textContent="Capacidad —";renderRecommendation(null,0);return}
       const people=safeNumber(r.personas),seats=safeNumber(r.sillas),used=Math.min(seats,safeNumber(r.ocupadas)),free=Math.max(0,seats-used),percent=seats?Math.round(used/seats*100):0;
       $("peopleValue").textContent=fmt(people);$("seatsValue").textContent=fmt(seats);$("usedValue").textContent=fmt(used);$("freeValue").textContent=fmt(free);
-      $("peopleFoot").textContent=`${people===1?"persona detectada":"personas detectadas"}`;$("seatsFoot").textContent=safeNumber(r.sillas_reales??r.sillas)>seats?`Se muestran ${fmt(seats)} de ${fmt(safeNumber(r.sillas_reales))} detectadas`:"Reconocidas en esta captura";$("usedFoot").textContent="Silla con persona";$("freeFoot").textContent=free===0?"No hay sillas libres":"Disponibles ahora";
+      $("peopleFoot").textContent=`${people===1?"persona detectada":"personas detectadas"}`;$("seatsFoot").textContent="Capacidad del módulo";$("usedFoot").textContent="Silla con persona";$("freeFoot").textContent=free===0?"No hay sillas libres":"Disponibles ahora";
       $("occupancyPercent").textContent=seats?`${percent}%`:"—";$("occupancyBar").style.width=`${percent}%`;$("occupancyBar").classList.toggle("full",seats>0&&free===0);$("occupancyProgress").setAttribute("aria-valuenow",String(percent));
       $("usedProgressLabel").textContent=`${fmt(used)} ocupadas`;$("freeProgressLabel").textContent=`${fmt(free)} disponibles`;$("capacityChip").textContent=`Capacidad ${fmt(seats)}`;
       renderRecommendation(r,percent);
@@ -818,23 +826,16 @@
       updateNavBadges();
       if(scroll)$("modulo").scrollIntoView({behavior:"smooth",block:"start"});
     }
-    // Ajusta un registro al límite de sillas. Las personas NO se limitan: se muestran todas las detectadas.
-    // Guarda el conteo original en sillas_reales; así se puede aplicar varias veces sin perderlo.
-    function limitarSillas(r){
-      const reales=safeNumber(r.sillas_reales??r.sillas);
-      const sillas=Math.min(reales,MAX_SILLAS_VISIBLES);
-      const ocupadas=Math.min(safeNumber(r.ocupadas),sillas);
-      return {...r,sillas,ocupadas,libres:Math.max(0,sillas-ocupadas),sillas_reales:reales};
-    }
+    // Ordena los registros del más reciente al más antiguo.
     function setRecords(rows){
-      allRecords=rows.map(limitarSillas).sort((a,b)=>(parseDate(b.fecha_hora)?.getTime()||0)-(parseDate(a.fecha_hora)?.getTime()||0)).slice(0,500);
+      allRecords=rows.slice().sort((a,b)=>(parseDate(b.fecha_hora)?.getTime()||0)-(parseDate(a.fecha_hora)?.getTime()||0)).slice(0,500);
     }
 
     // ---------- Datos ----------
     async function refreshDashboard(){
       if(isRefreshing){refreshPending=true;return}isRefreshing=true;const btn=$("refreshButton");btn.disabled=true;$("refreshIcon").classList.add("spin");
       try{
-        const [health,current,history]=await Promise.all([fetchJson("/health"),fetchJson("/ocupacion/actual"),fetchJson("/ocupacion/historial?limite=500")]);
+        const [health,current,history]=await Promise.all([fetchJson("/health"),fetchJson("/ocupacion/actual"),fetchJson("/ocupacion/historial?limite=500"),fetchActiveModules()]);
         const rows=Array.isArray(history.registros)?history.registros.slice():[];
         if(current?.encontrado&&current.registro&&!rows.some(r=>String(r.id)===String(current.registro.id)))rows.push(current.registro);
         setRecords(rows);writeStorage(CACHE_KEY,JSON.stringify({t:Date.now(),rows:allRecords.slice(0,200)}));
