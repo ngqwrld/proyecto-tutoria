@@ -49,7 +49,7 @@ app.add_middleware(
 )
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-APP_VERSION = "onnx-supabase-ram-v2"
+APP_VERSION = "onnx-supabase-capacidad-v3"
 
 # Clave que debe enviar la ESP32-CAM en el encabezado "X-API-Key" para
 # poder usar /predict. Se configura en Render como variable de entorno.
@@ -83,10 +83,6 @@ MAX_IMAGE_BYTES = 8 * 1024 * 1024
 INPUT_SIZE = 320
 CONF_PERSONA = 0.30
 NMS_THRESHOLD = 0.45
-
-# Rango HSV para las sillas verdes
-VERDE_MIN = np.array([25, 40, 35], dtype=np.uint8)
-VERDE_MAX = np.array([95, 255, 255], dtype=np.uint8)
 
 prediction_lock = asyncio.Lock()
 
@@ -234,35 +230,84 @@ def abrir_conexion_bd():
     )
 
 
-def guardar_registro_bd(respuesta, origen="esp32-cam"):
-    """Guarda únicamente los números del análisis, nunca la fotografía."""
-    origen_limpio = (origen or "esp32-cam").strip()[:80] or "esp32-cam"
+def buscar_modulo_bd(origen):
+    """Devuelve el módulo (id, nombre, capacidad, zona_sillas) según el origen."""
+    origen_limpio = (origen or "").strip()[:80]
+
+    with abrir_conexion_bd() as conexion:
+        with conexion.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, nombre, capacidad, activo, zona_sillas
+                FROM public.modulos
+                WHERE origen = %s
+                """,
+                (origen_limpio,),
+            )
+            fila = cursor.fetchone()
+
+    if fila is None:
+        return None
+
+    return {
+        "id": fila[0],
+        "nombre": fila[1],
+        "capacidad": int(fila[2]),
+        "activo": bool(fila[3]),
+        "zona_sillas": fila[4],
+        "origen": origen_limpio,
+    }
+
+
+def calcular_ocupacion(personas, capacidad):
+    """
+    Capacidad fija: las sillas del módulo no cambian, solo la gente.
+    No puede haber más sillas ocupadas que sillas en el módulo
+    (ej.: 5 personas en un módulo de 4 sillas -> 4 ocupadas, 0 libres).
+    """
+    ocupadas = min(personas, capacidad)
+
+    return {
+        "sillas": capacidad,
+        "ocupadas": ocupadas,
+        "libres": capacidad - ocupadas,
+        "estado": "vacio" if personas == 0 else "ocupado",
+    }
+
+
+def guardar_registro_bd(personas, modulo):
+    """Calcula la ocupación y la guarda. Solo números, nunca la fotografía."""
+    ocupacion = calcular_ocupacion(personas, modulo["capacidad"])
 
     with abrir_conexion_bd() as conexion:
         with conexion.cursor() as cursor:
             cursor.execute(
                 """
                 INSERT INTO public.registros_ocupacion
-                    (personas, sillas, ocupadas, libres, estado, origen)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (personas, sillas, ocupadas, libres, estado, origen, modulo_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, fecha_hora
                 """,
                 (
-                    int(respuesta["personas"]),
-                    int(respuesta["sillas"]),
-                    int(respuesta["ocupadas"]),
-                    int(respuesta["libres"]),
-                    str(respuesta["estado"]),
-                    origen_limpio,
+                    int(personas),
+                    ocupacion["sillas"],
+                    ocupacion["ocupadas"],
+                    ocupacion["libres"],
+                    ocupacion["estado"],
+                    modulo["origen"],
+                    modulo["id"],
                 ),
             )
             fila = cursor.fetchone()
 
-    return {
+    ocupacion["registro_bd"] = {
+        "guardado": True,
         "id": fila[0],
         "fecha_hora": fila[1].isoformat() if fila[1] else None,
-        "origen": origen_limpio,
+        "origen": modulo["origen"],
+        "modulo_id": modulo["id"],
     }
+    return ocupacion
 
 
 def fila_a_registro(fila):
@@ -521,309 +566,69 @@ def detectar_personas(imagen):
     return personas, tiempos
 
 
-def detectar_sillas_verdes(imagen):
-    """Detecta componentes verdes con OpenCV."""
+def persona_en_zona(box, zona, ancho, alto):
+    """
+    True si la parte baja del cuerpo (donde queda la cadera de alguien
+    sentado) cae dentro de la zona de las sillas. Sin zona, cuenta a todos.
+    """
+    if not zona:
+        return True
 
-    inicio = time.perf_counter()
-
-    with imagen.convert("RGB") as rgb:
-        imagen_rgb = np.array(rgb)
-
-    alto, ancho = imagen_rgb.shape[:2]
-    area_imagen = max(ancho * alto, 1)
-
-    imagen_hsv = cv2.cvtColor(
-        imagen_rgb,
-        cv2.COLOR_RGB2HSV
-    )
-
-    mascara = cv2.inRange(
-        imagen_hsv,
-        VERDE_MIN,
-        VERDE_MAX
-    )
-
-    mascara = cv2.morphologyEx(
-        mascara,
-        cv2.MORPH_OPEN,
-        np.ones((3, 3), dtype=np.uint8)
-    )
-
-    mascara = cv2.morphologyEx(
-        mascara,
-        cv2.MORPH_CLOSE,
-        np.ones((5, 5), dtype=np.uint8)
-    )
-
-    cantidad, etiquetas, estadisticas, centroides = (
-        cv2.connectedComponentsWithStats(
-            mascara,
-            connectivity=8
-        )
-    )
-
-    area_minima = max(
-        120,
-        int(area_imagen * 0.0008)
-    )
-
-    sillas = []
-    descartados = []
-
-    for indice in range(1, cantidad):
-        x = int(estadisticas[indice, cv2.CC_STAT_LEFT])
-        y = int(estadisticas[indice, cv2.CC_STAT_TOP])
-        w = int(estadisticas[indice, cv2.CC_STAT_WIDTH])
-        h = int(estadisticas[indice, cv2.CC_STAT_HEIGHT])
-        area = int(estadisticas[indice, cv2.CC_STAT_AREA])
-
-        cx, cy = centroides[indice]
-
-        if area < area_minima or w < 8 or h < 8:
-            descartados.append({
-                "area_pixeles": area,
-                "caja": [x, y, x + w, y + h],
-                "motivo": "componente_demasiado_pequeno"
-            })
-            continue
-
-        region = etiquetas[y:y + h, x:x + w]
-        proporcion_verde = float(
-            np.count_nonzero(region == indice) / max(w * h, 1)
-        )
-
-        sillas.append({
-            "id": len(sillas) + 1,
-            "box": [
-                float(x), float(y),
-                float(x + w), float(y + h)
-            ],
-            "area_verde": area,
-            "proporcion_verde": round(proporcion_verde, 3),
-            "centro": [
-                round(float(cx), 1),
-                round(float(cy), 1)
-            ]
-        })
-
-    diagnostico = {
-        "componentes_verdes_totales": cantidad - 1,
-        "area_minima_pixeles": area_minima,
-        "componentes_descartados": descartados
-    }
-
-    tiempo_ms = round(
-        (time.perf_counter() - inicio) * 1000, 2
-    )
-
-    del imagen_rgb, imagen_hsv, mascara, etiquetas
-
-    return sillas, diagnostico, tiempo_ms
-
-
-def interseccion_cajas(box_a, box_b):
-    ax1, ay1, ax2, ay2 = box_a
-    bx1, by1, bx2, by2 = box_b
-
-    x1 = max(ax1, bx1)
-    y1 = max(ay1, by1)
-    x2 = min(ax2, bx2)
-    y2 = min(ay2, by2)
-
-    return (
-        max(0.0, x2 - x1)
-        * max(0.0, y2 - y1)
-    )
-
-
-def area_caja(box):
     x1, y1, x2, y2 = box
-    return (
-        max(0.0, x2 - x1)
-        * max(0.0, y2 - y1)
-    )
-
-
-def relacion_persona_silla(persona_box, silla_box):
-    px1, py1, px2, py2 = persona_box
-    sx1, sy1, sx2, sy2 = silla_box
-
-    ancho_silla = max(sx2 - sx1, 1)
-    alto_silla = max(sy2 - sy1, 1)
-
-    silla_expandida = [
-        sx1 - ancho_silla * 0.20,
-        sy1 - alto_silla * 0.15,
-        sx2 + ancho_silla * 0.20,
-        sy2 + alto_silla * 0.15
-    ]
-
-    alto_persona = max(py2 - py1, 1)
-
-    zona_inferior = [
-        px1,
-        py1 + alto_persona * 0.35,
-        px2,
-        py2
-    ]
-
-    inter_total = interseccion_cajas(
-        persona_box,
-        silla_expandida
-    )
-
-    inter_inferior = interseccion_cajas(
-        zona_inferior,
-        silla_expandida
-    )
-
-    area_persona = max(area_caja(persona_box), 1)
-    area_silla = max(area_caja(silla_expandida), 1)
-
-    return max(
-        inter_total / min(area_persona, area_silla),
-        inter_inferior / area_silla
-    )
-
-
-def asociar_personas_sillas(personas, sillas):
-    candidatos = []
-
-    for persona in personas:
-        for silla in sillas:
-            puntuacion = relacion_persona_silla(
-                persona["box"],
-                silla["box"]
-            )
-
-            if puntuacion >= 0.05:
-                candidatos.append({
-                    "persona": persona["id"],
-                    "silla": silla["id"],
-                    "puntuacion": round(puntuacion, 3)
-                })
-
-    candidatos.sort(
-        key=lambda item: item["puntuacion"],
-        reverse=True
-    )
-
-    personas_asignadas = set()
-    sillas_asignadas = set()
-    asignaciones = []
-
-    for candidato in candidatos:
-        persona_id = candidato["persona"]
-        silla_id = candidato["silla"]
-
-        asignada = (
-            persona_id not in personas_asignadas
-            and silla_id not in sillas_asignadas
-        )
-
-        candidato["asignada"] = asignada
-
-        if asignada:
-            personas_asignadas.add(persona_id)
-            sillas_asignadas.add(silla_id)
-            asignaciones.append(dict(candidato))
+    punto_x = ((x1 + x2) / 2) / max(ancho, 1)
+    punto_y = (y1 + (y2 - y1) * 0.75) / max(alto, 1)
 
     return (
-        len(sillas_asignadas),
-        asignaciones,
-        candidatos,
-        [
-            p["id"] for p in personas
-            if p["id"] not in personas_asignadas
-        ],
-        [
-            s["id"] for s in sillas
-            if s["id"] not in sillas_asignadas
-        ]
+        float(zona["x1"]) <= punto_x <= float(zona["x2"])
+        and float(zona["y1"]) <= punto_y <= float(zona["y2"])
     )
 
 
-def analizar_imagen(imagen):
+def analizar_imagen(imagen, modulo):
     inicio_analisis = time.perf_counter()
     memoria_inicio = leer_memoria_proceso_mb()
 
     personas, tiempos_yolo = detectar_personas(imagen)
     memoria_despues_yolo = leer_memoria_proceso_mb()
 
-    sillas, diagnostico_verde, opencv_ms = (
-        detectar_sillas_verdes(imagen)
-    )
-    memoria_despues_opencv = leer_memoria_proceso_mb()
-
-    inicio_asociacion = time.perf_counter()
-
-    (
-        ocupadas,
-        asignaciones,
-        coincidencias,
-        personas_sin_silla,
-        sillas_sin_persona
-    ) = asociar_personas_sillas(personas, sillas)
-
-    asociacion_ms = round(
-        (time.perf_counter() - inicio_asociacion) * 1000,
-        2
-    )
-
-    memoria_despues_asociacion = leer_memoria_proceso_mb()
-
-    total_personas = len(personas)
-    total_sillas = len(sillas)
-    libres = max(total_sillas - ocupadas, 0)
+    ancho, alto = imagen.size
+    zona = modulo.get("zona_sillas")
+    en_zona = [
+        p for p in personas
+        if persona_en_zona(p["box"], zona, ancho, alto)
+    ]
 
     tiempos = dict(tiempos_yolo)
-    tiempos["opencv_sillas_ms"] = opencv_ms
-    tiempos["asociacion_ms"] = asociacion_ms
 
     respuesta = {
         "version_api": APP_VERSION,
-        "personas": total_personas,
-        "sillas": total_sillas,
-        "ocupadas": ocupadas,
-        "libres": libres,
-        "estado": "vacio" if total_personas == 0 else "ocupado",
+        "modulo": modulo["nombre"],
+        "personas": len(en_zona),
         "diagnostico": {
             "metodo_personas": "YOLO11n ONNX Runtime",
-            "metodo_sillas": "OpenCV HSV verde",
-            "inferencias_yolo": 1,
+            "metodo_sillas": "Capacidad fija del módulo (tabla modulos)",
+            "capacidad_modulo": modulo["capacidad"],
+            "filtro_zona_activo": bool(zona),
+            "personas_detectadas_total": len(personas),
+            "personas_fuera_de_zona": len(personas) - len(en_zona),
             "personas_detectadas": [
                 {
                     "id": p["id"],
                     "confianza": p["confianza"],
-                    "caja": [round(v, 1) for v in p["box"]]
+                    "caja": [round(v, 1) for v in p["box"]],
+                    "en_zona": p in en_zona,
                 }
                 for p in personas
             ],
-            "sillas_detectadas": [
-                {
-                    "id": s["id"],
-                    "caja": [round(v, 1) for v in s["box"]],
-                    "area_verde": s["area_verde"],
-                    "proporcion_verde": s["proporcion_verde"]
-                }
-                for s in sillas
-            ],
-            "deteccion_color": diagnostico_verde,
-            "asignaciones": asignaciones,
-            "coincidencias_evaluadas": coincidencias,
-            "personas_sin_silla": personas_sin_silla,
-            "sillas_sin_persona": sillas_sin_persona
         },
         "tiempos_ms": tiempos,
         "memoria_mb": {
             "antes_yolo_rss": memoria_inicio["rss_mb"],
             "despues_yolo_rss": memoria_despues_yolo["rss_mb"],
-            "despues_opencv_rss": memoria_despues_opencv["rss_mb"],
-            "despues_asociacion_rss": memoria_despues_asociacion["rss_mb"]
-        }
+        },
     }
 
-    del personas, sillas
+    del personas, en_zona
     gc.collect()
 
     memoria_final = leer_memoria_proceso_mb()
@@ -854,6 +659,33 @@ async def predict(
     tracker = {"pico_rss_mb": None}
 
     try:
+        # Primero se identifica el módulo: si no existe o no está activo,
+        # no se gasta tiempo analizando la foto.
+        try:
+            modulo = await asyncio.to_thread(buscar_modulo_bd, origen)
+        except Exception:
+            logger.exception(json.dumps({
+                "evento": "buscar_modulo_error",
+                "version_api": APP_VERSION,
+                "request_id": request_id,
+            }))
+            raise HTTPException(
+                status_code=503,
+                detail="No se pudo consultar la tabla de módulos en Supabase."
+            )
+
+        if modulo is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"El origen '{origen}' no corresponde a ningún módulo registrado"
+            )
+
+        if not modulo["activo"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{modulo['nombre']} está inactivo. Actívalo en la tabla modulos."
+            )
+
         inicio_lectura = time.perf_counter()
         image_bytes = await file.read(MAX_IMAGE_BYTES + 1)
 
@@ -903,7 +735,8 @@ async def predict(
             try:
                 respuesta = await asyncio.to_thread(
                     analizar_imagen,
-                    imagen
+                    imagen,
+                    modulo
                 )
             finally:
                 stop_event.set()
@@ -928,10 +761,10 @@ async def predict(
         # Se almacena el conteo y metadatos mínimos, nunca los bytes de la foto.
         inicio_guardado_bd = time.perf_counter()
         try:
-            registro_bd = await asyncio.to_thread(
+            ocupacion = await asyncio.to_thread(
                 guardar_registro_bd,
-                respuesta,
-                origen,
+                respuesta["personas"],
+                modulo,
             )
         except Exception:
             logger.exception(json.dumps({
@@ -939,7 +772,6 @@ async def predict(
                 "version_api": APP_VERSION,
                 "request_id": request_id,
                 "personas": respuesta.get("personas"),
-                "sillas": respuesta.get("sillas"),
             }))
             raise HTTPException(
                 status_code=503,
@@ -955,10 +787,8 @@ async def predict(
         tiempos["api_total_ms"] = round(
             (time.perf_counter() - inicio_api) * 1000, 2
         )
-        respuesta["registro_bd"] = {
-            "guardado": True,
-            **registro_bd,
-        }
+        # sillas, ocupadas, libres, estado y registro_bd
+        respuesta.update(ocupacion)
 
         logger.info(json.dumps({
             "evento": "predict_completado",
