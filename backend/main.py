@@ -10,6 +10,7 @@ import asyncio
 import gc
 import json
 import logging
+import secrets
 import time
 import uuid
 from pathlib import Path
@@ -20,7 +21,9 @@ import numpy as np
 import onnxruntime as ort
 
 from PIL import Image, UnidentifiedImageError
-from fastapi import FastAPI, File, Form, UploadFile, HTTPException, Query
+from fastapi import (
+    FastAPI, File, Form, UploadFile, HTTPException, Query, Header, Depends
+)
 from fastapi.middleware.cors import CORSMiddleware
 import psycopg
 
@@ -46,7 +49,35 @@ app.add_middleware(
 )
 
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-APP_VERSION = "onnx-supabase-ram-v1"
+APP_VERSION = "onnx-supabase-ram-v2"
+
+# Clave que debe enviar la ESP32-CAM en el encabezado "X-API-Key" para
+# poder usar /predict. Se configura en Render como variable de entorno.
+# Si la variable está vacía, /predict sigue abierto (modo de transición)
+# y se deja un aviso en los logs.
+PREDICT_API_KEY = os.getenv("PREDICT_API_KEY", "").strip()
+
+
+def verificar_clave_dispositivo(
+    x_api_key: str | None = Header(default=None, alias="X-API-Key")
+):
+    """Permite usar /predict solo a dispositivos con la clave correcta."""
+    if not PREDICT_API_KEY:
+        logger.warning(json.dumps({
+            "evento": "predict_sin_clave_configurada",
+            "detalle": "Define PREDICT_API_KEY en Render para proteger /predict",
+        }))
+        return
+
+    # compare_digest compara en tiempo constante para no filtrar
+    # pistas sobre la clave a quien intente adivinarla.
+    if not x_api_key or not secrets.compare_digest(
+        x_api_key.encode(), PREDICT_API_KEY.encode()
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Dispositivo no autorizado"
+        )
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
 INPUT_SIZE = 320
@@ -185,7 +216,8 @@ def health():
         "estado": "ok",
         "modelo": "YOLO11n ONNX + OpenCV",
         "version_api": APP_VERSION,
-        "base_datos_configurada": bool(DATABASE_URL)
+        "base_datos_configurada": bool(DATABASE_URL),
+        "predict_protegido": bool(PREDICT_API_KEY)
     }
 
 
@@ -807,7 +839,7 @@ def analizar_imagen(imagen):
     return respuesta
 
 
-@app.post("/predict")
+@app.post("/predict", dependencies=[Depends(verificar_clave_dispositivo)])
 async def predict(
     file: UploadFile = File(...),
     origen: str = Form(default="esp32-cam")
