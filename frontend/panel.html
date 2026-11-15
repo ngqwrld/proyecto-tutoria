@@ -246,7 +246,7 @@
     .form-materia{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
     .form-materia .field{margin:0}
     .materias-lista{border:1px solid var(--line);border-radius:16px;overflow:hidden}
-    .materia{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px 40px;gap:12px;align-items:center;padding:9px 14px;border-top:1px solid var(--line)}
+    .materia{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px 80px;gap:12px;align-items:center;padding:9px 14px;border-top:1px solid var(--line)}
     .materia:first-child{border-top:0}
     .materia.inactiva .m-nombre{color:var(--muted-2);text-decoration:line-through}
     .m-nombre{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -264,7 +264,8 @@
     .pag:disabled{color:var(--line-2);cursor:not-allowed}
     .pag-puntos{padding:0 4px;color:var(--muted-2)}
     @media(max-width:520px){.pag-txt{display:none}.paginacion{justify-content:center}.pag-info{width:100%;text-align:center}}
-    @media(max-width:620px){.materia{grid-template-columns:minmax(0,1fr) 40px}.materia .m-uso,.materia .switch{grid-column:1}.form-materia{grid-template-columns:1fr}}
+    .m-acc{display:flex;gap:6px;justify-content:flex-end}
+    @media(max-width:620px){.materia{grid-template-columns:minmax(0,1fr) 80px}.materia .m-uso,.materia .switch{grid-column:1}.form-materia{grid-template-columns:1fr}}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -1243,7 +1244,7 @@
 
     // ---------- Materias ----------
     const POR_PAGINA = 20;
-    let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", paginaMaterias = 1, editandoMateria = null;
+    let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", paginaMaterias = 1, editandoMateria = null, confirmandoMateria = null;
     function msgMaterias(texto, tipo = "error") { const m = $("msgMaterias"); m.textContent = texto; m.className = "msg show " + tipo; m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     function errorMateria(err) {
       const t = String(err?.message || "");
@@ -1319,6 +1320,13 @@
         });
         fila.append(f); setTimeout(() => { i.focus(); i.select(); }, 30); return fila;
       }
+      if (confirmandoMateria === m.id) {
+        const caja = el("div", "confirmar-fila"); caja.style.gridColumn = "1 / -1";
+        const si = el("button", "btn btn-rojo btn-sm", "Sí, eliminar"); si.type = "button"; si.addEventListener("click", () => eliminarMateria(m, si));
+        const no = el("button", "btn btn-light btn-sm", "No"); no.type = "button"; no.addEventListener("click", () => { confirmandoMateria = null; pintarMateriasAdmin(); });
+        caja.append(el("span", null, `¿Eliminar "${m.nombre}"? No la usa ninguna tutoría.`), si, no);
+        fila.append(caja); return fila;
+      }
       const nombre = el("span", "m-nombre", m.nombre); nombre.title = m.nombre;
       const usoTxt = el("span", "m-uso", uso ? `${uso} ${uso === 1 ? "tutoría" : "tutorías"}` : "Sin tutorías");
       const sw = el("label", "switch"), chk = el("input");
@@ -1332,10 +1340,24 @@
         msgMaterias(m.activa ? `"${m.nombre}" vuelve a estar disponible para los tutores.` : `"${m.nombre}" ya no aparecerá en el buscador de los tutores${uso ? "; sus tutorías actuales la conservan" : ""}.`, "ok");
       });
       const ed = el("button", "icon-btn"); ed.type = "button"; ed.innerHTML = ICONO_EDITAR; ed.setAttribute("aria-label", `Renombrar ${m.nombre}`);
-      ed.addEventListener("click", () => { editandoMateria = m.id; pintarMateriasAdmin(); });
-      fila.append(nombre, usoTxt, sw, ed); return fila;
+      ed.addEventListener("click", () => { editandoMateria = m.id; confirmandoMateria = null; pintarMateriasAdmin(); });
+      const acc = el("div", "m-acc"); acc.append(ed);
+      if (!uso) { // solo se pueden eliminar las que ninguna tutoría usa
+        const bo = el("button", "icon-btn peligro"); bo.type = "button"; bo.innerHTML = ICONO_BORRAR; bo.setAttribute("aria-label", `Eliminar ${m.nombre}`);
+        bo.addEventListener("click", () => { confirmandoMateria = m.id; editandoMateria = null; pintarMateriasAdmin(); });
+        acc.append(bo);
+      }
+      fila.append(nombre, usoTxt, sw, acc); return fila;
     }
     const ordenMaterias = (a, b) => a.nombre.localeCompare(b.nombre, "es");
+    async function eliminarMateria(m, boton) {
+      await conBoton(boton, async () => {
+        const { data, error } = await sb.from("materias").delete().eq("id", m.id).select("id");
+        if (error || !data?.length) return msgMaterias(error?.code === "23503" || !error ? "No se puede eliminar: hay tutorías con esa materia. Desactívala en su lugar." : errorMateria(error));
+        confirmandoMateria = null; materiasAdmin = materiasAdmin.filter(x => x.id !== m.id);
+        pintarMateriasAdmin(); msgMaterias(`"${m.nombre}" fue eliminada.`, "ok");
+      });
+    }
 
     $("formMateria").addEventListener("submit", e => {
       e.preventDefault();
