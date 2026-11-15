@@ -74,6 +74,50 @@
     .panel-card{background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:24px}
     .panel-card h2{margin:0 0 6px;font-size:20px;color:var(--g-950)}
     .panel-card p{margin:0;color:var(--muted)}
+    .layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:20px;align-items:start}
+    @media(max-width:860px){.layout{grid-template-columns:1fr}.form-card{order:-1}}
+    .panel-card + .panel-card{margin-top:20px}
+    .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
+    .card-head span{font-size:12px;color:var(--muted-2)}
+    .proximas{display:grid;gap:10px}
+    .proxima{display:flex;align-items:center;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:16px;background:var(--g-50)}
+    .proxima.en-curso{background:var(--g-800);border-color:var(--g-800);color:#fff}
+    .proxima-cuando{min-width:96px}
+    .proxima-cuando strong{display:block;font-size:15px}
+    .proxima-cuando small{color:var(--muted)}
+    .proxima.en-curso .proxima-cuando small{color:var(--lime)}
+    .proxima-info{flex:1;min-width:0}
+    .proxima-info strong{display:block}
+    .proxima-info small{color:var(--muted)}
+    .proxima.en-curso .proxima-info small{color:#d5e6d8}
+    .vacio{padding:18px;border:1px dashed var(--line-2);border-radius:16px;text-align:center;color:var(--muted)}
+    .dia{padding:10px 0;border-top:1px solid var(--line)}
+    .dia:first-child{border-top:0;padding-top:0}
+    .dia-nombre{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
+    .fila{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px}
+    .fila:hover{background:var(--g-50)}
+    .fila.editando{background:var(--amber-100)}
+    .fila-hora{font-weight:800;min-width:118px}
+    .fila-mod{flex:1;color:var(--muted)}
+    .chip{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:var(--g-100);color:var(--g-800);font-size:11px;font-weight:700}
+    .icon-btn{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;color:var(--muted)}
+    .icon-btn:hover{border-color:var(--line-2);color:var(--g-900)}
+    .icon-btn.peligro:hover{color:var(--red-700);border-color:var(--red-700)}
+    .icon-btn svg{width:16px;height:16px}
+    .confirmar{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--red-700)}
+    .btn-sm{min-height:32px;padding:4px 12px;font-size:12px;border-radius:10px}
+    .btn-rojo{background:var(--red-700);color:#fff}
+    select{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font:inherit;font-size:15px}
+    input[type=time]{width:100%;min-height:46px;padding:10px 14px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-size:15px}
+    .duraciones{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .duracion{position:relative}
+    .duracion input{position:absolute;opacity:0}
+    .duracion span{display:block;padding:10px;border:1px solid var(--line-2);border-radius:12px;text-align:center;cursor:pointer;font-weight:700}
+    .duracion small{display:block;font-weight:500;color:var(--muted);font-size:12px}
+    .duracion input:checked + span{border-color:var(--g-700);background:var(--g-100);color:var(--g-900)}
+    .duracion input:focus-visible + span{outline:3px solid var(--lime);outline-offset:2px}
+    .resumen{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--g-50);font-weight:700;color:var(--g-900)}
+    .resumen.mal{background:var(--red-100);color:var(--red-700)}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -170,10 +214,53 @@
 
     <main class="panel">
       <!-- Paso 3 del plan: aquí irá "Mis tutorías" -->
-      <section class="panel-card" id="seccionTutor" hidden>
-        <h2>Mis tutorías</h2>
-        <p>Aquí podrás registrar, editar y eliminar tus tutorías de la semana.</p>
-      </section>
+      <div class="layout" id="seccionTutor" hidden>
+        <div>
+          <section class="panel-card" aria-labelledby="tProximas">
+            <div class="card-head"><h2 id="tProximas">Próximas tutorías</h2><span id="horaActual"></span></div>
+            <div class="proximas" id="listaProximas"></div>
+          </section>
+          <section class="panel-card" aria-labelledby="tSemana">
+            <div class="card-head"><h2 id="tSemana">Mi horario semanal</h2><span id="totalSemana"></span></div>
+            <div id="listaSemana"></div>
+          </section>
+        </div>
+
+        <section class="panel-card form-card" aria-labelledby="tForm">
+          <h2 id="tForm">Nueva tutoría</h2>
+          <p class="sub" id="formSub">Se repite cada semana, de lunes a sábado entre 7:00 a.m. y 9:00 p.m.</p>
+          <div class="msg" id="msgTutoria" role="alert"></div>
+          <form id="formTutoria" novalidate>
+            <div class="field">
+              <label for="tModulo">Módulo</label>
+              <select id="tModulo" required></select>
+            </div>
+            <div class="field">
+              <label for="tDia">Día</label>
+              <select id="tDia" required>
+                <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
+                <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="tHora">Hora de inicio</label>
+              <input type="time" id="tHora" min="07:00" max="20:15" step="60" value="08:00" required>
+            </div>
+            <div class="field">
+              <label id="tDurLabel">Duración</label>
+              <div class="duraciones" role="radiogroup" aria-labelledby="tDurLabel">
+                <label class="duracion"><input type="radio" name="tDur" value="45"><span>Sencilla<small>45 minutos</small></span></label>
+                <label class="duracion"><input type="radio" name="tDur" value="90" checked><span>Doble<small>90 minutos</small></span></label>
+              </div>
+            </div>
+            <p class="resumen" id="tResumen" aria-live="polite"></p>
+            <div class="actions">
+              <button class="btn btn-dark" type="submit" id="btnGuardarTutoria">Agregar tutoría</button>
+              <button class="btn btn-light" type="button" id="btnCancelarEdicion" hidden>Cancelar edición</button>
+            </div>
+          </form>
+        </section>
+      </div>
       <!-- Paso 4 del plan: aquí irá "Administración" -->
       <section class="panel-card" id="seccionAdmin" hidden>
         <h2>Administración</h2>
@@ -292,7 +379,7 @@
       if (!user) { verVista("vistaIngreso"); verPaso("formClave"); return; }
 
       // RLS: cada usuario solo puede leer su propio perfil.
-      const { data, error } = await sb.from("perfiles").select("nombre, rol, activo").eq("user_id", user.id).maybeSingle();
+      const { data, error } = await sb.from("perfiles").select("id, nombre, rol, activo").eq("user_id", user.id).maybeSingle();
       if (error || !data || !data.activo) {
         await sb.auth.signOut();
         verVista("vistaIngreso"); verPaso("formClave");
@@ -309,10 +396,11 @@
       $("seccionTutor").hidden = esAdmin;
       $("seccionAdmin").hidden = !esAdmin;
       verVista("vistaPanel");
+      if (!esAdmin) await iniciarTutor();
     }
 
     $("btnSalir").addEventListener("click", async () => {
-      await sb.auth.signOut(); perfil = null;
+      await sb.auth.signOut(); perfil = null; clearInterval(relojTutor); tutorias = []; terminarEdicion();
       $("clave").value = ""; verVista("vistaIngreso"); verPaso("formClave"); mostrarMsg("Sesión cerrada.", "ok");
     });
 
@@ -320,6 +408,188 @@
     sb.auth.onAuthStateChange(evento => {
       if (evento === "SIGNED_OUT" && perfil) { perfil = null; verVista("vistaIngreso"); verPaso("formClave"); }
     });
+
+    // =====================================================================
+    // Panel del tutor: Mis tutorías
+    // =====================================================================
+    const DIAS = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
+    const INICIO_MIN = 7 * 60, FIN_MAX = 21 * 60;
+    let tutorias = [], modulos = [], editandoId = null, confirmandoId = null, relojTutor = null;
+
+    const aMin = h => { const [a, b] = String(h).split(":").map(Number); return a * 60 + b; };
+    const aHora = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+    function hora12(m) { const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); const s = h >= 12 ? "p. m." : "a. m."; return `${((h + 11) % 12) + 1}:${mm} ${s}`; }
+    const nombreModulo = id => (modulos.find(m => m.id === id) || {}).nombre || `Módulo ${id}`;
+
+    // Hora actual en Colombia (la página puede abrirse desde cualquier zona horaria).
+    function ahoraBogota() {
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Bogota", weekday: "short", hour: "numeric", minute: "numeric", hourCycle: "h23" })
+        .formatToParts(new Date()).map(x => [x.type, x.value]));
+      const dia = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[p.weekday];
+      return { dia, min: Number(p.hour) * 60 + Number(p.minute) };
+    }
+
+    // Cuándo ocurre la próxima vez una tutoría semanal, en minutos desde ahora.
+    function proximaVez(t, ahora) {
+      const ini = aMin(t.hora_inicio), fin = aMin(t.hora_fin);
+      let dias = (t.dia_semana - ahora.dia + 7) % 7;
+      if (dias === 0 && ahora.min >= fin) dias = 7;
+      const enCurso = dias === 0 && ahora.min >= ini && ahora.min < fin;
+      return { enCurso, faltan: dias * 1440 + ini - ahora.min, dias, ini, fin };
+    }
+    function textoCuando(p) {
+      if (p.enCurso) return { titulo: "Ahora", detalle: `En curso hasta ${hora12(p.fin)}` };
+      const titulo = p.dias === 0 ? "Hoy" : p.dias === 1 ? "Mañana" : DIAS[(ahoraBogota().dia + p.dias - 1) % 7 + 1];
+      let detalle;
+      if (p.faltan < 60) detalle = `En ${p.faltan} min`;
+      else if (p.faltan < 1440) { const h = Math.floor(p.faltan / 60), m = p.faltan % 60; detalle = `En ${h} h${m ? " " + m + " min" : ""}`; }
+      else detalle = p.dias === 7 ? "En una semana" : `En ${p.dias} días`;
+      return { titulo, detalle };
+    }
+
+    const ICONO_EDITAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="m13.5 6.5 4 4"/></svg>';
+    const ICONO_BORRAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>';
+    function el(tag, cls, texto) { const e = document.createElement(tag); if (cls) e.className = cls; if (texto != null) e.textContent = texto; return e; }
+
+    function pintarProximas() {
+      const ahora = ahoraBogota(), cont = $("listaProximas");
+      $("horaActual").textContent = `${DIAS[ahora.dia]} · ${hora12(ahora.min)}`;
+      if (!tutorias.length) { cont.replaceChildren(el("div", "vacio", "Aún no tienes tutorías. Agrega la primera con el formulario.")); return; }
+      const orden = tutorias.map(t => ({ t, p: proximaVez(t, ahora) })).sort((a, b) => a.p.faltan - b.p.faltan).slice(0, 3);
+      cont.replaceChildren(...orden.map(({ t, p }) => {
+        const c = textoCuando(p), fila = el("div", "proxima" + (p.enCurso ? " en-curso" : ""));
+        const cuando = el("div", "proxima-cuando"); cuando.append(el("strong", null, c.titulo), el("small", null, c.detalle));
+        const info = el("div", "proxima-info");
+        info.append(el("strong", null, `${hora12(p.ini)} – ${hora12(p.fin)}`), el("small", null, `${nombreModulo(t.modulo_id)} · ${t.duracion_min === 90 ? "Doble" : "Sencilla"}`));
+        fila.append(cuando, info); return fila;
+      }));
+    }
+
+    function pintarSemana() {
+      const cont = $("listaSemana");
+      $("totalSemana").textContent = tutorias.length ? `${tutorias.length} ${tutorias.length === 1 ? "tutoría" : "tutorías"} · ${Math.round(tutorias.reduce((s, t) => s + t.duracion_min, 0) / 60 * 10) / 10} h` : "";
+      if (!tutorias.length) { cont.replaceChildren(el("div", "vacio", "Tu horario está vacío.")); return; }
+      const bloques = [];
+      for (let d = 1; d <= 6; d++) {
+        const delDia = tutorias.filter(t => t.dia_semana === d).sort((a, b) => aMin(a.hora_inicio) - aMin(b.hora_inicio));
+        if (!delDia.length) continue;
+        const bloque = el("div", "dia"); bloque.append(el("p", "dia-nombre", DIAS[d]));
+        delDia.forEach(t => {
+          const fila = el("div", "fila" + (t.id === editandoId ? " editando" : ""));
+          const horaTxt = el("span", "fila-hora", `${hora12(aMin(t.hora_inicio))} – ${hora12(aMin(t.hora_fin))}`);
+          const mod = el("span", "fila-mod", nombreModulo(t.modulo_id)); mod.append(el("span", "chip", t.duracion_min === 90 ? "Doble" : "Sencilla"));
+          fila.append(horaTxt, mod);
+          if (confirmandoId === t.id) {
+            const conf = el("span", "confirmar", "¿Eliminar?");
+            const si = el("button", "btn btn-rojo btn-sm", "Sí, eliminar"); si.type = "button"; si.addEventListener("click", () => eliminarTutoria(t.id, si));
+            const no = el("button", "btn btn-light btn-sm", "No"); no.type = "button"; no.addEventListener("click", () => { confirmandoId = null; pintarSemana(); });
+            conf.append(si, no); fila.append(conf);
+          } else {
+            const ed = el("button", "icon-btn"); ed.type = "button"; ed.innerHTML = ICONO_EDITAR; ed.setAttribute("aria-label", `Editar tutoría del ${DIAS[d]} a las ${hora12(aMin(t.hora_inicio))}`); ed.addEventListener("click", () => empezarEdicion(t));
+            const bo = el("button", "icon-btn peligro"); bo.type = "button"; bo.innerHTML = ICONO_BORRAR; bo.setAttribute("aria-label", `Eliminar tutoría del ${DIAS[d]} a las ${hora12(aMin(t.hora_inicio))}`); bo.addEventListener("click", () => { confirmandoId = t.id; pintarSemana(); });
+            fila.append(ed, bo);
+          }
+          bloque.append(fila);
+        });
+        bloques.push(bloque);
+      }
+      cont.replaceChildren(...bloques);
+    }
+    function pintarTodo() { pintarProximas(); pintarSemana(); }
+
+    // ---------- Formulario ----------
+    const duracionElegida = () => Number(document.querySelector('input[name="tDur"]:checked').value);
+    function actualizarResumen() {
+      const r = $("tResumen"), h = $("tHora").value;
+      if (!h) { r.textContent = "Elige la hora de inicio."; r.className = "resumen mal"; return false; }
+      const ini = aMin(h), fin = ini + duracionElegida();
+      const dia = DIAS[Number($("tDia").value)];
+      if (ini < INICIO_MIN) { r.textContent = "Las tutorías empiezan desde las 7:00 a. m."; r.className = "resumen mal"; return false; }
+      if (fin > FIN_MAX) { r.textContent = `Terminaría a las ${hora12(fin)}. Debe terminar a las 9:00 p. m. o antes.`; r.className = "resumen mal"; return false; }
+      r.textContent = `${dia} de ${hora12(ini)} a ${hora12(fin)}`; r.className = "resumen"; return true;
+    }
+    ["tHora", "tDia"].forEach(id => $(id).addEventListener("input", actualizarResumen));
+    document.querySelectorAll('input[name="tDur"]').forEach(r => r.addEventListener("change", actualizarResumen));
+
+    function msgTutoria(texto, tipo = "error") { const m = $("msgTutoria"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function limpiarMsgTutoria() { $("msgTutoria").className = "msg"; }
+
+    function empezarEdicion(t) {
+      editandoId = t.id; confirmandoId = null; limpiarMsgTutoria();
+      $("tModulo").value = String(t.modulo_id); $("tDia").value = String(t.dia_semana); $("tHora").value = t.hora_inicio.slice(0, 5);
+      document.querySelector(`input[name="tDur"][value="${t.duracion_min}"]`).checked = true;
+      $("tForm").textContent = "Editar tutoría"; $("btnGuardarTutoria").textContent = "Guardar cambios"; $("btnCancelarEdicion").hidden = false;
+      actualizarResumen(); pintarSemana(); $("tModulo").focus();
+    }
+    function terminarEdicion() {
+      editandoId = null;
+      $("tForm").textContent = "Nueva tutoría"; $("btnGuardarTutoria").textContent = "Agregar tutoría"; $("btnCancelarEdicion").hidden = true;
+      pintarSemana();
+    }
+    $("btnCancelarEdicion").addEventListener("click", () => { terminarEdicion(); limpiarMsgTutoria(); });
+
+    // Explica un cruce mostrando qué horario ya está ocupado.
+    async function explicarCruce(err, datos) {
+      const txt = String(err?.message || "");
+      const ini = aMin(datos.hora_inicio), fin = ini + datos.duracion_min;
+      if (txt.includes("sin_cruce_del_tutor")) {
+        const otra = tutorias.find(t => t.id !== editandoId && t.dia_semana === datos.dia_semana && aMin(t.hora_inicio) < fin && aMin(t.hora_fin) > ini);
+        return otra ? `Ya tienes una tutoría el ${DIAS[datos.dia_semana].toLowerCase()} de ${hora12(aMin(otra.hora_inicio))} a ${hora12(aMin(otra.hora_fin))} en ${nombreModulo(otra.modulo_id)}.` : "Ya tienes otra tutoría en ese horario.";
+      }
+      if (txt.includes("sin_cruce_en_modulo")) {
+        const { data } = await sb.from("tutorias").select("hora_inicio, hora_fin").eq("modulo_id", datos.modulo_id).eq("dia_semana", datos.dia_semana);
+        const otra = (data || []).find(t => aMin(t.hora_inicio) < fin && aMin(t.hora_fin) > ini);
+        return otra ? `${nombreModulo(datos.modulo_id)} ya está ocupado el ${DIAS[datos.dia_semana].toLowerCase()} de ${hora12(aMin(otra.hora_inicio))} a ${hora12(aMin(otra.hora_fin))}. Elige otra hora u otro módulo.`
+                    : `${nombreModulo(datos.modulo_id)} ya tiene otra tutoría en ese horario.`;
+      }
+      if (txt.includes("termina_antes_de_las_21")) return "La tutoría debe terminar a las 9:00 p. m. o antes.";
+      if (txt.includes("hora_inicio_check")) return "Las tutorías empiezan desde las 7:00 a. m.";
+      if (txt.includes("row-level security") || err?.code === "42501") return "No tienes permiso para esta acción. Vuelve a ingresar.";
+      return traducirError(err);
+    }
+
+    $("formTutoria").addEventListener("submit", e => {
+      e.preventDefault(); limpiarMsgTutoria();
+      if (!actualizarResumen()) return msgTutoria($("tResumen").textContent);
+      const datos = { modulo_id: Number($("tModulo").value), dia_semana: Number($("tDia").value), hora_inicio: $("tHora").value, duracion_min: duracionElegida() };
+      conBoton($("btnGuardarTutoria"), async () => {
+        const consulta = editandoId
+          ? sb.from("tutorias").update(datos).eq("id", editandoId).select("id")
+          : sb.from("tutorias").insert({ ...datos, tutor_id: perfil.id }).select("id");
+        const { data, error } = await consulta;
+        if (error) return msgTutoria(await explicarCruce(error, datos));
+        if (!data || !data.length) return msgTutoria("No se pudo guardar. Vuelve a ingresar e inténtalo de nuevo.");
+        const fueEdicion = !!editandoId;
+        terminarEdicion(); await cargarTutorias();
+        msgTutoria(fueEdicion ? "Cambios guardados." : "Tutoría agregada.", "ok");
+      });
+    });
+
+    async function eliminarTutoria(id, boton) {
+      await conBoton(boton, async () => {
+        const { error } = await sb.from("tutorias").delete().eq("id", id);
+        if (error) { msgTutoria(traducirError(error)); return; }
+        confirmandoId = null; if (editandoId === id) terminarEdicion();
+        await cargarTutorias(); msgTutoria("Tutoría eliminada.", "ok");
+      });
+    }
+
+    async function cargarTutorias() {
+      const { data, error } = await sb.from("tutorias")
+        .select("id, modulo_id, dia_semana, hora_inicio, duracion_min, hora_fin")
+        .eq("tutor_id", perfil.id);
+      if (error) { msgTutoria("No se pudieron cargar tus tutorías. Recarga la página."); return; }
+      tutorias = data || []; pintarTodo();
+    }
+
+    async function iniciarTutor() {
+      const { data } = await sb.from("modulos").select("id, nombre").order("id");
+      modulos = data || [];
+      $("tModulo").replaceChildren(...modulos.map(m => { const o = el("option", null, m.nombre); o.value = String(m.id); return o; }));
+      actualizarResumen();
+      await cargarTutorias();
+      clearInterval(relojTutor); relojTutor = setInterval(pintarProximas, 30000); // "En X min" se mantiene al día
+    }
 
     // ---------- Inicio ----------
     (async () => {
