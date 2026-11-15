@@ -91,14 +91,6 @@
     .proxima-info small{color:var(--muted)}
     .proxima.en-curso .proxima-info small{color:#d5e6d8}
     .vacio{padding:18px;border:1px dashed var(--line-2);border-radius:16px;text-align:center;color:var(--muted)}
-    .dia{padding:10px 0;border-top:1px solid var(--line)}
-    .dia:first-child{border-top:0;padding-top:0}
-    .dia-nombre{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 6px}
-    .fila{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px}
-    .fila:hover{background:var(--g-50)}
-    .fila.editando{background:var(--amber-100)}
-    .fila-hora{font-weight:800;min-width:118px}
-    .fila-mod{flex:1;color:var(--muted)}
     .chip{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;background:var(--g-100);color:var(--g-800);font-size:11px;font-weight:700}
     .icon-btn{display:inline-grid;place-items:center;width:34px;height:34px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer;color:var(--muted)}
     .icon-btn:hover{border-color:var(--line-2);color:var(--g-900)}
@@ -128,6 +120,45 @@
     .combo-lista .sin-resultados{color:var(--muted);cursor:default}
     .combo.elegida input{border-color:var(--g-600);background:var(--g-50);font-weight:700}
     .materia-txt{font-weight:700;color:var(--g-900)}
+    .cal-tabs{display:none;gap:6px;margin-bottom:10px;overflow-x:auto}
+    .cal-tab{flex:1;min-width:48px;padding:8px 6px;border:1px solid var(--line-2);border-radius:10px;background:#fff;font-weight:700;font-size:13px;cursor:pointer}
+    .cal-tab[aria-selected=true]{background:var(--g-800);border-color:var(--g-800);color:#fff}
+    .cal-tab.hoy:not([aria-selected=true]){border-color:var(--g-600);color:var(--g-700)}
+    .cal{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
+    .cal-grid{display:grid;grid-template-columns:52px repeat(6,minmax(0,1fr))}
+    .cal-dh{padding:8px 4px;text-align:center;font-weight:800;font-size:12px;background:var(--g-50);border-bottom:1px solid var(--line);border-left:1px solid var(--line);color:var(--muted)}
+    .cal-dh:first-child{border-left:0}
+    .cal-dh.hoy{background:var(--g-800);color:#fff}
+    .cal-horas{position:relative}
+    .cal-hora{position:absolute;right:6px;margin-top:2px;font-size:10px;font-weight:700;color:var(--muted-2);white-space:nowrap}
+    .cal-col{position:relative;border-left:1px solid var(--line)}
+    .cal-col.hoy{background-color:rgba(228,242,230,.45)}
+    .cal-ev{position:absolute;left:3px;right:3px;z-index:2;display:block;border:1px solid;border-left-width:4px;border-radius:8px;padding:3px 6px;text-align:left;overflow:hidden;cursor:pointer;font:inherit;transition:transform .15s,box-shadow .15s}
+    .cal-ev:hover{transform:translateY(-1px);box-shadow:0 6px 16px -8px rgba(15,58,34,.45)}
+    .cal-ev strong{display:block;font-size:12px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .cal-ev.alto strong{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:anywhere}
+    .cal-ev small{display:block;font-size:11px;line-height:1.25;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cal-ev.sel{box-shadow:0 0 0 3px var(--lime);z-index:4}
+    .cal-ev.pasada{opacity:.55}
+    .cal-ahora{position:absolute;left:0;right:0;z-index:3;border-top:2px solid var(--red-700);pointer-events:none}
+    .cal-ahora::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--red-700)}
+    .cal-leyenda{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
+    .cal-leyenda span{display:inline-flex;align-items:center;gap:6px}
+    .cal-leyenda i{width:12px;height:12px;border-radius:4px;border:1px solid;border-left-width:3px}
+    .cal-detalle{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px;padding:12px 14px;border:1px solid var(--line-2);border-radius:14px;background:var(--g-50)}
+    .cal-detalle-info{flex:1;min-width:200px}
+    .cal-detalle-info strong{display:block;font-size:15px}
+    .cal-detalle-info small{color:var(--muted)}
+    .cal-detalle-acciones{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    @media(max-width:640px){
+      .cal-tabs{display:flex}
+      .cal-grid{grid-template-columns:44px minmax(0,1fr)}
+      .cal-dh:not(.visible):not(:first-child),.cal-col:not(.visible){display:none}
+      .cal-ev strong{font-size:13px}
+      .topbar{padding:10px 14px}.brand img{width:48px}
+      .user{width:100%;gap:8px}.user .btn{min-height:36px;padding:6px 12px;font-size:13px}
+      .user-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    }
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -232,7 +263,10 @@
           </section>
           <section class="panel-card" aria-labelledby="tSemana">
             <div class="card-head"><h2 id="tSemana">Mi horario semanal</h2><span id="totalSemana"></span></div>
+            <div class="cal-tabs" id="calTabs" role="tablist" aria-label="Día de la semana"></div>
             <div id="listaSemana"></div>
+            <div class="cal-leyenda" id="calLeyenda" aria-label="Colores por materia"></div>
+            <div class="cal-detalle" id="calDetalle" hidden aria-live="polite"></div>
           </section>
         </div>
 
@@ -421,7 +455,7 @@
     }
 
     $("btnSalir").addEventListener("click", async () => {
-      await sb.auth.signOut(); perfil = null; clearInterval(relojTutor); tutorias = []; terminarEdicion();
+      await sb.auth.signOut(); perfil = null; clearInterval(relojTutor); tutorias = []; seleccionadaId = null; diaMovil = null; terminarEdicion();
       $("clave").value = ""; verVista("vistaIngreso"); verPaso("formClave"); mostrarMsg("Sesión cerrada.", "ok");
     });
 
@@ -494,35 +528,101 @@
       }));
     }
 
+    // ---------- Calendario semanal ----------
+    const PX_MIN = 0.8;                          // alto en píxeles por cada minuto
+    const DIAS_CORTOS = ["", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
+    const COLORES = [                            // fondo, borde, texto (contraste AA)
+      ["#e4f2e6", "#27854a", "#0f3a22"], ["#e6f1fb", "#185fa5", "#0c447c"], ["#eeedfe", "#534ab7", "#3c3489"],
+      ["#faece7", "#993c1d", "#712b13"], ["#faeeda", "#a06312", "#633806"], ["#e1f5ee", "#0f6e56", "#085041"],
+      ["#fbeaf0", "#993556", "#72243e"], ["#f1efe8", "#5f5e5a", "#2c2c2a"]
+    ];
+    let seleccionadaId = null, diaMovil = null;
+
+    // Cada materia del tutor recibe siempre el mismo color (orden alfabético).
+    function coloresPorMateria() {
+      const ids = [...new Set(tutorias.map(t => t.materia_id))].sort((a, b) => nombreMateria(a).localeCompare(nombreMateria(b), "es"));
+      return new Map(ids.map((id, i) => [id, COLORES[i % COLORES.length]]));
+    }
+
     function pintarSemana() {
-      const cont = $("listaSemana");
+      const cont = $("listaSemana"), ahora = ahoraBogota();
       $("totalSemana").textContent = tutorias.length ? `${tutorias.length} ${tutorias.length === 1 ? "tutoría" : "tutorías"} · ${Math.round(tutorias.reduce((s, t) => s + t.duracion_min, 0) / 60 * 10) / 10} h` : "";
-      if (!tutorias.length) { cont.replaceChildren(el("div", "vacio", "Tu horario está vacío.")); return; }
-      const bloques = [];
+      if (diaMovil === null) diaMovil = ahora.dia <= 6 ? ahora.dia : 1;
+      const colores = coloresPorMateria();
+      const alto = (FIN_MAX - INICIO_MIN) * PX_MIN;
+
+      // Pestañas de día (solo se ven en el celular)
+      $("calTabs").replaceChildren(...[1, 2, 3, 4, 5, 6].map(d => {
+        const b = el("button", "cal-tab" + (d === ahora.dia ? " hoy" : ""), DIAS_CORTOS[d]);
+        b.type = "button"; b.setAttribute("role", "tab"); b.setAttribute("aria-selected", String(d === diaMovil));
+        b.addEventListener("click", () => { diaMovil = d; pintarSemana(); }); return b;
+      }));
+
+      const grid = el("div", "cal-grid");
+      // Encabezados
+      grid.append(el("div", "cal-dh"));
       for (let d = 1; d <= 6; d++) {
-        const delDia = tutorias.filter(t => t.dia_semana === d).sort((a, b) => aMin(a.hora_inicio) - aMin(b.hora_inicio));
-        if (!delDia.length) continue;
-        const bloque = el("div", "dia"); bloque.append(el("p", "dia-nombre", DIAS[d]));
-        delDia.forEach(t => {
-          const fila = el("div", "fila" + (t.id === editandoId ? " editando" : ""));
-          const horaTxt = el("span", "fila-hora", `${hora12(aMin(t.hora_inicio))} – ${hora12(aMin(t.hora_fin))}`);
-          const mod = el("span", "fila-mod"); mod.append(el("span", "materia-txt", nombreMateria(t.materia_id)), document.createTextNode(` · ${nombreModulo(t.modulo_id)}`), el("span", "chip", nombreDuracion(t.duracion_min)));
-          fila.append(horaTxt, mod);
-          if (confirmandoId === t.id) {
-            const conf = el("span", "confirmar", "¿Eliminar?");
-            const si = el("button", "btn btn-rojo btn-sm", "Sí, eliminar"); si.type = "button"; si.addEventListener("click", () => eliminarTutoria(t.id, si));
-            const no = el("button", "btn btn-light btn-sm", "No"); no.type = "button"; no.addEventListener("click", () => { confirmandoId = null; pintarSemana(); });
-            conf.append(si, no); fila.append(conf);
-          } else {
-            const ed = el("button", "icon-btn"); ed.type = "button"; ed.innerHTML = ICONO_EDITAR; ed.setAttribute("aria-label", `Editar tutoría del ${DIAS[d]} a las ${hora12(aMin(t.hora_inicio))}`); ed.addEventListener("click", () => empezarEdicion(t));
-            const bo = el("button", "icon-btn peligro"); bo.type = "button"; bo.innerHTML = ICONO_BORRAR; bo.setAttribute("aria-label", `Eliminar tutoría del ${DIAS[d]} a las ${hora12(aMin(t.hora_inicio))}`); bo.addEventListener("click", () => { confirmandoId = t.id; pintarSemana(); });
-            fila.append(ed, bo);
-          }
-          bloque.append(fila);
-        });
-        bloques.push(bloque);
+        const h = el("div", "cal-dh" + (d === ahora.dia ? " hoy" : "") + (d === diaMovil ? " visible" : ""), DIAS_CORTOS[d] + (d === ahora.dia ? " · hoy" : ""));
+        grid.append(h);
       }
-      cont.replaceChildren(...bloques);
+      // Columna de horas
+      const horas = el("div", "cal-horas"); horas.style.height = alto + "px";
+      for (let m = INICIO_MIN; m < FIN_MAX; m += 60) {
+        const e = el("span", "cal-hora", hora12(m).replace(":00", "")); e.style.top = (m - INICIO_MIN) * PX_MIN + "px"; horas.append(e);
+      }
+      grid.append(horas);
+      // Columnas de días
+      const lineas = `repeating-linear-gradient(to bottom, transparent 0, transparent ${60 * PX_MIN - 1}px, var(--line) ${60 * PX_MIN - 1}px, var(--line) ${60 * PX_MIN}px)`;
+      for (let d = 1; d <= 6; d++) {
+        const col = el("div", "cal-col" + (d === ahora.dia ? " hoy" : "") + (d === diaMovil ? " visible" : ""));
+        col.style.height = alto + "px"; col.style.backgroundImage = lineas;
+        col.setAttribute("aria-label", DIAS[d]);
+        tutorias.filter(t => t.dia_semana === d).forEach(t => {
+          const ini = aMin(t.hora_inicio), fin = aMin(t.hora_fin), [fondo, borde, texto] = colores.get(t.materia_id);
+          const pasada = d === ahora.dia && fin <= ahora.min; // el horario se repite: solo hoy "ya pasó"
+          const ev = el("button", "cal-ev" + (t.id === seleccionadaId || t.id === editandoId ? " sel" : "") + (pasada ? " pasada" : "") + ((fin - ini) >= 90 ? " alto" : ""));
+          ev.type = "button";
+          Object.assign(ev.style, { top: (ini - INICIO_MIN) * PX_MIN + 1 + "px", height: (fin - ini) * PX_MIN - 2 + "px", background: fondo, borderColor: borde, color: texto });
+          ev.append(el("strong", null, nombreMateria(t.materia_id)), el("small", null, `${hora12(ini).replace(/ [ap]\. m\./, "")}–${hora12(fin)} · ${nombreModulo(t.modulo_id).replace("Módulo ", "M")}`));
+          ev.setAttribute("aria-label", `${nombreMateria(t.materia_id)}, ${DIAS[d]} de ${hora12(ini)} a ${hora12(fin)}, ${nombreModulo(t.modulo_id)}. Ver opciones.`);
+          ev.addEventListener("click", () => { seleccionadaId = t.id; confirmandoId = null; pintarSemana(); $("calDetalle").scrollIntoView({ block: "nearest", behavior: "smooth" }); });
+          col.append(ev);
+        });
+        if (d === ahora.dia && ahora.min >= INICIO_MIN && ahora.min <= FIN_MAX) {
+          const linea = el("div", "cal-ahora"); linea.style.top = (ahora.min - INICIO_MIN) * PX_MIN + "px"; col.append(linea);
+        }
+        grid.append(col);
+      }
+      const cal = el("div", "cal"); cal.append(grid);
+      cont.replaceChildren(cal);
+
+      // Leyenda de colores
+      $("calLeyenda").replaceChildren(...[...colores.entries()].map(([id, [fondo, borde]]) => {
+        const s = el("span"), i = el("i"); Object.assign(i.style, { background: fondo, borderColor: borde }); s.append(i, nombreMateria(id)); return s;
+      }));
+      pintarDetalle();
+    }
+
+    // Opciones de la tutoría seleccionada en el calendario
+    function pintarDetalle() {
+      const caja = $("calDetalle"), t = tutorias.find(x => x.id === seleccionadaId);
+      if (!t) { caja.hidden = true; caja.replaceChildren(); return; }
+      const ini = aMin(t.hora_inicio), fin = aMin(t.hora_fin);
+      const info = el("div", "cal-detalle-info");
+      info.append(el("strong", null, nombreMateria(t.materia_id)), el("small", null, `${DIAS[t.dia_semana]} · ${hora12(ini)} – ${hora12(fin)} · ${nombreModulo(t.modulo_id)} · ${nombreDuracion(t.duracion_min)}`));
+      const acc = el("div", "cal-detalle-acciones");
+      if (confirmandoId === t.id) {
+        const txt = el("span", "confirmar", "¿Eliminar esta tutoría?");
+        const si = el("button", "btn btn-rojo btn-sm", "Sí, eliminar"); si.type = "button"; si.addEventListener("click", () => eliminarTutoria(t.id, si));
+        const no = el("button", "btn btn-light btn-sm", "No"); no.type = "button"; no.addEventListener("click", () => { confirmandoId = null; pintarDetalle(); });
+        acc.append(txt, si, no);
+      } else {
+        const ed = el("button", "btn btn-dark btn-sm"); ed.type = "button"; ed.innerHTML = ICONO_EDITAR; ed.append(" Editar"); ed.addEventListener("click", () => empezarEdicion(t));
+        const bo = el("button", "btn btn-light btn-sm"); bo.type = "button"; bo.innerHTML = ICONO_BORRAR; bo.append(" Eliminar"); bo.addEventListener("click", () => { confirmandoId = t.id; pintarDetalle(); });
+        const ce = el("button", "icon-btn"); ce.type = "button"; ce.setAttribute("aria-label", "Cerrar"); ce.textContent = "✕"; ce.addEventListener("click", () => { seleccionadaId = null; confirmandoId = null; pintarSemana(); });
+        acc.append(ed, bo, ce);
+      }
+      caja.replaceChildren(info, acc); caja.hidden = false;
     }
     function pintarTodo() { pintarProximas(); pintarSemana(); }
 
@@ -651,7 +751,7 @@
       await conBoton(boton, async () => {
         const { error } = await sb.from("tutorias").delete().eq("id", id);
         if (error) { msgTutoria(traducirError(error)); return; }
-        confirmandoId = null; if (editandoId === id) terminarEdicion();
+        confirmandoId = null; if (seleccionadaId === id) seleccionadaId = null; if (editandoId === id) terminarEdicion();
         await cargarTutorias(); msgTutoria("Tutoría eliminada.", "ok");
       });
     }
@@ -673,7 +773,7 @@
       $("tModulo").replaceChildren(...modulos.map(m => { const o = el("option", null, m.nombre); o.value = String(m.id); return o; }));
       actualizarResumen();
       await cargarTutorias();
-      clearInterval(relojTutor); relojTutor = setInterval(pintarProximas, 30000); // "En X min" se mantiene al día
+      clearInterval(relojTutor); relojTutor = setInterval(pintarTodo, 60000); // "En X min" se mantiene al día
     }
 
     // ---------- Inicio ----------
