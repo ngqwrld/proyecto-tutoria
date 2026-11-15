@@ -54,7 +54,11 @@
     .actions .btn{width:100%}
     .alt{margin:18px 0 0;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);text-align:center}
     .msg{display:none;margin:0 0 14px;padding:10px 12px;border-radius:12px;font-size:13px;font-weight:600}
-    .msg.show{display:block}
+    .msg.show{display:block;animation:msgEntra .25s ease-out}
+    .msg.saliendo{opacity:0;overflow:hidden;padding-top:0;padding-bottom:0;margin-bottom:0;
+      transition:opacity .3s ease,height .3s ease .2s,padding .3s ease .2s,margin .3s ease .2s}
+    @keyframes msgEntra{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){.msg.show{animation:none}.msg.saliendo{transition:none}}
     .msg.error{background:var(--red-100);color:var(--red-700)}
     .msg.ok{background:var(--g-100);color:var(--g-800)}
     .back{display:inline-flex;margin-top:14px;font-size:13px}
@@ -562,12 +566,19 @@
     let correoActual = "", temporizador = null, perfil = null;
 
     // ---------- Mensajes ----------
-    // Los mensajes de confirmación (verdes) se ocultan solos a los 4 s; los de error se quedan fijos.
+    // Los mensajes de confirmación (verdes) se desvanecen solos a los 4 s; los de error se quedan fijos.
     function autoOcultar(m, tipo) {
-      clearTimeout(m._t);
+      clearTimeout(m._t); m.style.height = "";
       if (tipo !== "ok") return;
       const texto = m.textContent;
-      m._t = setTimeout(() => { if (m.textContent === texto && m.classList.contains("ok")) m.className = "msg"; }, 4000);
+      m._t = setTimeout(() => {
+        if (m.textContent !== texto || !m.classList.contains("ok")) return;
+        // se desvanece y luego se recoge suavemente para que el contenido no salte
+        m.style.height = m.offsetHeight + "px";
+        void m.offsetHeight;
+        m.classList.add("saliendo"); m.style.height = "0px";
+        m._t = setTimeout(() => { m.className = "msg"; m.style.height = ""; }, 550);
+      }, 4000);
     }
     function mostrarMsg(texto, tipo = "error") { const m = $("msg"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); }
     function ocultarMsg() { $("msg").className = "msg"; }
