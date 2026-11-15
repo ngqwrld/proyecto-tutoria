@@ -154,6 +154,8 @@
     .cal-ev small{display:block;font-size:11px;line-height:1.25;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .cal-ev.sel{box-shadow:0 0 0 3px var(--lime);z-index:4}
     .cal-ev.pasada{opacity:.55}
+    .cal-cerrado{position:absolute;left:0;right:0;z-index:0;display:flex;align-items:flex-start;justify-content:center;padding-top:14px;
+      background:repeating-linear-gradient(135deg,#f3f5f3 0 8px,#eaeeea 8px 16px);color:#8a968c;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;pointer-events:none}
     .cal-vacio{display:none;position:absolute;left:12px;right:12px;top:40%;text-align:center;color:var(--muted);font-weight:600;font-size:13px;padding:10px;border:1px dashed var(--line-2);border-radius:12px;background:#fff}
     @media(max-width:640px){.cal-vacio{display:block}}
     .cal-ahora{position:absolute;left:0;right:0;z-index:3;border-top:2px solid var(--g-700);pointer-events:none}
@@ -404,7 +406,7 @@
 
         <section class="panel-card form-card" aria-labelledby="tForm">
           <h2 id="tForm">Nueva tutoría</h2>
-          <p class="sub" id="formSub">Se repite cada semana, de lunes a sábado entre 7:00 a.m. y 8:00 p.m.</p>
+          <p class="sub" id="formSub">Se repite cada semana: de lunes a viernes entre 7:00 a.m. y 8:00 p.m., y los sábados hasta las 12:00 m.</p>
           <div class="msg" id="msgTutoria" role="alert"></div>
           <form id="formTutoria" novalidate>
             <div class="field">
@@ -709,7 +711,8 @@
     // Panel del tutor: Mis tutorías
     // =====================================================================
     const DIAS = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-    const INICIO_MIN = 7 * 60, FIN_MAX = 20 * 60;
+    const INICIO_MIN = 7 * 60, FIN_MAX = 20 * 60, FIN_SABADO = 12 * 60;
+    const finMaxDe = dia => dia === 6 ? FIN_SABADO : FIN_MAX; // el sábado la sede cierra al mediodía
     // Duración en bloques de 45 min. Para permitir más bloques, agrégalos aquí,
     // en el formulario y en la regla duracion_en_bloques_de_45 de Supabase.
     const BLOQUES = { 45: "Sencilla", 90: "Doble", 135: "Triple", 180: "Cuádruple" };
@@ -719,7 +722,7 @@
 
     const aMin = h => { const [a, b] = String(h).split(":").map(Number); return a * 60 + b; };
     const aHora = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-    function hora12(m) { const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); const s = h >= 12 ? "p. m." : "a. m."; return `${((h + 11) % 12) + 1}:${mm} ${s}`; }
+    function hora12(m) { if (m === 12 * 60) return "12:00 m."; const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); const s = h >= 12 ? "p. m." : "a. m."; return `${((h + 11) % 12) + 1}:${mm} ${s}`; }
     const nombreModulo = id => (modulos.find(m => m.id === id) || {}).nombre || `Módulo ${id}`;
     const nombreMateria = id => (materias.find(m => m.id === id) || {}).nombre || "Materia";
     // Para buscar sin importar mayúsculas ni tildes: "calculo" encuentra "Cálculo".
@@ -835,7 +838,15 @@
           ev.addEventListener("click", () => { seleccionadaId = t.id; confirmandoId = null; pintarSemana(); $("calDetalle").scrollIntoView({ block: "nearest", behavior: "smooth" }); });
           col.append(ev);
         });
-        if (!tutorias.some(t => t.dia_semana === d)) col.append(el("div", "cal-vacio", `Sin tutorías el ${DIAS[d].toLowerCase()}`));
+        if (finMaxDe(d) < FIN_MAX) { // tarde del sábado: la sede está cerrada
+          const c = el("div", "cal-cerrado", "Cerrado"); c.setAttribute("aria-hidden", "true");
+          Object.assign(c.style, { top: y(finMaxDe(d)) + "px", height: (FIN_MAX - finMaxDe(d)) * PX_MIN + "px" }); col.append(c);
+        }
+        if (!tutorias.some(t => t.dia_semana === d)) {
+          const v = el("div", "cal-vacio", `Sin tutorías el ${DIAS[d].toLowerCase()}`);
+          if (finMaxDe(d) < FIN_MAX) v.style.top = y(INICIO_MIN + (finMaxDe(d) - INICIO_MIN) / 3) + "px"; // dentro de la franja abierta
+          col.append(v);
+        }
         if (d === ahora.dia && ahora.min >= INICIO_MIN && ahora.min <= FIN_MAX) {
           const linea = el("div", "cal-ahora"); linea.style.top = y(ahora.min) + "px"; col.append(linea);
         }
@@ -891,9 +902,13 @@
       const r = $("tResumen"), h = $("tHora").value;
       if (!h) { r.textContent = "Elige la hora de inicio."; r.className = "resumen mal"; return false; }
       const ini = aMin(h), fin = ini + duracionElegida();
-      const dia = DIAS[Number($("tDia").value)];
+      const diaNum = Number($("tDia").value), dia = DIAS[diaNum], finMax = finMaxDe(diaNum);
+      $("tHora").max = `${String(Math.floor((finMax - 45) / 60)).padStart(2, "0")}:${String((finMax - 45) % 60).padStart(2, "0")}`;
       if (ini < INICIO_MIN) { r.textContent = "Las tutorías empiezan desde las 7:00 a. m."; r.className = "resumen mal"; return false; }
-      if (fin > FIN_MAX) { r.textContent = `Terminaría a las ${hora12(fin)}. Debe terminar a las 8:00 p. m. o antes.`; r.className = "resumen mal"; return false; }
+      if (fin > finMax) {
+        r.textContent = `Terminaría a las ${hora12(fin)}; ` + (diaNum === 6 ? "los sábados debe terminar a las 12:00 m. o antes." : "debe terminar a las 8:00 p. m. o antes.");
+        r.className = "resumen mal"; return false;
+      }
       r.textContent = `${dia} de ${hora12(ini)} a ${hora12(fin)}`; r.className = "resumen"; return true;
     }
     ["tHora", "tDia"].forEach(id => $(id).addEventListener("input", actualizarResumen));
@@ -982,6 +997,7 @@
         return otra ? `${nombreModulo(datos.modulo_id)} ya está ocupado el ${DIAS[datos.dia_semana].toLowerCase()} de ${hora12(aMin(otra.hora_inicio))} a ${hora12(aMin(otra.hora_fin))}. Elige otra hora u otro módulo.`
                     : `${nombreModulo(datos.modulo_id)} ya tiene otra tutoría en ese horario.`;
       }
+      if (txt.includes("sabado_hasta_mediodia")) return "Los sábados la tutoría debe terminar a las 12:00 m. o antes.";
       if (txt.includes("termina_antes_de_las_20")) return "La tutoría debe terminar a las 8:00 p. m. o antes.";
       if (txt.includes("hora_inicio_check")) return "Las tutorías empiezan desde las 7:00 a. m.";
       if (txt.includes("row-level security") || err?.code === "42501") return "No tienes permiso para esta acción. Vuelve a ingresar.";
