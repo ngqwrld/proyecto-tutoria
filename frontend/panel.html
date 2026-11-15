@@ -126,15 +126,15 @@
     .cal-tab.hoy:not([aria-selected=true]){border-color:var(--g-600);color:var(--g-700)}
     .cal{border:1px solid var(--line);border-radius:16px;overflow:hidden;background:#fff}
     .cal-grid{display:grid;grid-template-columns:52px repeat(6,minmax(0,1fr))}
-    .cal-dh{padding:8px 4px;text-align:center;font-weight:800;font-size:12px;background:var(--g-50);border-bottom:1px solid var(--line);border-left:1px solid var(--line);color:var(--muted)}
+    .cal-dh{padding:10px 4px;text-align:center;font-weight:800;font-size:12px;background:#fff;border-bottom:1px solid var(--line);border-left:1px solid #edf2ec;color:var(--muted)}
     .cal-dh:first-child{border-left:0}
     .cal-dh.hoy{background:var(--g-800);color:#fff}
-    .cal-horas{position:relative}
-    .cal-hora{position:absolute;right:6px;margin-top:2px;font-size:10px;font-weight:700;color:var(--muted-2);white-space:nowrap}
-    .cal-col{position:relative;border-left:1px solid var(--line)}
-    .cal-col.hoy{background-color:rgba(228,242,230,.45)}
-    .cal-ev{position:absolute;left:3px;right:3px;z-index:2;display:block;border:1px solid;border-left-width:4px;border-radius:8px;padding:3px 6px;text-align:left;overflow:hidden;cursor:pointer;font:inherit;transition:transform .15s,box-shadow .15s}
-    .cal-ev:hover{transform:translateY(-1px);box-shadow:0 6px 16px -8px rgba(15,58,34,.45)}
+    .cal-horas{position:relative;background:#fff}
+    .cal-hora{position:absolute;right:8px;transform:translateY(-50%);font-size:11px;font-weight:700;color:var(--muted-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+    .cal-col{position:relative;border-left:1px solid #edf2ec;background-repeat:repeat}
+    .cal-col.hoy{background-color:rgba(228,242,230,.5)}
+    .cal-ev{position:absolute;left:5px;right:5px;z-index:2;display:block;border:0;border-left:4px solid;border-radius:4px 10px 10px 4px;padding:4px 7px;text-align:left;overflow:hidden;cursor:pointer;font:inherit;box-shadow:0 1px 2px rgba(15,58,34,.08);transition:transform .15s,box-shadow .15s}
+    .cal-ev:hover{transform:translateY(-1px);box-shadow:0 8px 18px -10px rgba(15,58,34,.5)}
     .cal-ev strong{display:block;font-size:12px;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     .cal-ev.alto strong{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;hyphens:auto;-webkit-hyphens:auto;overflow-wrap:anywhere}
     .cal-ev small{display:block;font-size:11px;line-height:1.25;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -529,7 +529,8 @@
     }
 
     // ---------- Calendario semanal ----------
-    const PX_MIN = 0.8;                          // alto en píxeles por cada minuto
+    const PX_MIN = 1;                            // alto en píxeles por cada minuto (60 px = 1 hora)
+    const MARGEN = 12;                           // espacio arriba y abajo para que se lean "7:00" y "9:00"
     const DIAS_CORTOS = ["", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
     const COLORES = [                            // fondo, borde, texto (contraste AA)
       ["#e4f2e6", "#27854a", "#0f3a22"], ["#e6f1fb", "#185fa5", "#0c447c"], ["#eeedfe", "#534ab7", "#3c3489"],
@@ -549,7 +550,8 @@
       $("totalSemana").textContent = tutorias.length ? `${tutorias.length} ${tutorias.length === 1 ? "tutoría" : "tutorías"} · ${Math.round(tutorias.reduce((s, t) => s + t.duracion_min, 0) / 60 * 10) / 10} h` : "";
       if (diaMovil === null) diaMovil = ahora.dia <= 6 ? ahora.dia : 1;
       const colores = coloresPorMateria();
-      const alto = (FIN_MAX - INICIO_MIN) * PX_MIN;
+      const alto = (FIN_MAX - INICIO_MIN) * PX_MIN + MARGEN * 2;
+      const y = min => MARGEN + (min - INICIO_MIN) * PX_MIN; // posición vertical de una hora
 
       // Pestañas de día (solo se ven en el celular)
       $("calTabs").replaceChildren(...[1, 2, 3, 4, 5, 6].map(d => {
@@ -567,29 +569,33 @@
       }
       // Columna de horas
       const horas = el("div", "cal-horas"); horas.style.height = alto + "px";
-      for (let m = INICIO_MIN; m < FIN_MAX; m += 60) {
-        const e = el("span", "cal-hora", hora12(m).replace(":00", "")); e.style.top = (m - INICIO_MIN) * PX_MIN + "px"; horas.append(e);
+      for (let m = INICIO_MIN; m <= FIN_MAX; m += 60) {
+        const h = Math.floor(m / 60), e = el("span", "cal-hora", `${((h + 11) % 12) + 1} ${h < 12 ? "am" : "pm"}`);
+        e.style.top = y(m) + "px"; horas.append(e);
       }
       grid.append(horas);
       // Columnas de días
-      const lineas = `repeating-linear-gradient(to bottom, transparent 0, transparent ${60 * PX_MIN - 1}px, var(--line) ${60 * PX_MIN - 1}px, var(--line) ${60 * PX_MIN}px)`;
+      // Línea suave en cada hora y una más tenue en cada media hora, alineadas con las etiquetas.
+      const H = 60 * PX_MIN, M = 30 * PX_MIN;
+      const lineas = `repeating-linear-gradient(to bottom, #dde6dc 0 1px, transparent 1px ${H}px), repeating-linear-gradient(to bottom, transparent 0 ${M}px, #eef3ed ${M}px ${M + 1}px, transparent ${M + 1}px ${H}px)`;
       for (let d = 1; d <= 6; d++) {
         const col = el("div", "cal-col" + (d === ahora.dia ? " hoy" : "") + (d === diaMovil ? " visible" : ""));
         col.style.height = alto + "px"; col.style.backgroundImage = lineas;
+        col.style.backgroundPosition = `0 ${MARGEN}px`; col.style.backgroundSize = `100% ${(FIN_MAX - INICIO_MIN) * PX_MIN + 1}px`; col.style.backgroundRepeat = "no-repeat";
         col.setAttribute("aria-label", DIAS[d]);
         tutorias.filter(t => t.dia_semana === d).forEach(t => {
           const ini = aMin(t.hora_inicio), fin = aMin(t.hora_fin), [fondo, borde, texto] = colores.get(t.materia_id);
           const pasada = d === ahora.dia && fin <= ahora.min; // el horario se repite: solo hoy "ya pasó"
           const ev = el("button", "cal-ev" + (t.id === seleccionadaId || t.id === editandoId ? " sel" : "") + (pasada ? " pasada" : "") + ((fin - ini) >= 90 ? " alto" : ""));
           ev.type = "button";
-          Object.assign(ev.style, { top: (ini - INICIO_MIN) * PX_MIN + 1 + "px", height: (fin - ini) * PX_MIN - 2 + "px", background: fondo, borderColor: borde, color: texto });
+          Object.assign(ev.style, { top: y(ini) + 1 + "px", height: (fin - ini) * PX_MIN - 2 + "px", background: fondo, borderColor: borde, color: texto });
           ev.append(el("strong", null, nombreMateria(t.materia_id)), el("small", null, `${hora12(ini).replace(/ [ap]\. m\./, "")}–${hora12(fin)} · ${nombreModulo(t.modulo_id).replace("Módulo ", "M")}`));
           ev.setAttribute("aria-label", `${nombreMateria(t.materia_id)}, ${DIAS[d]} de ${hora12(ini)} a ${hora12(fin)}, ${nombreModulo(t.modulo_id)}. Ver opciones.`);
           ev.addEventListener("click", () => { seleccionadaId = t.id; confirmandoId = null; pintarSemana(); $("calDetalle").scrollIntoView({ block: "nearest", behavior: "smooth" }); });
           col.append(ev);
         });
         if (d === ahora.dia && ahora.min >= INICIO_MIN && ahora.min <= FIN_MAX) {
-          const linea = el("div", "cal-ahora"); linea.style.top = (ahora.min - INICIO_MIN) * PX_MIN + "px"; col.append(linea);
+          const linea = el("div", "cal-ahora"); linea.style.top = y(ahora.min) + "px"; col.append(linea);
         }
         grid.append(col);
       }
