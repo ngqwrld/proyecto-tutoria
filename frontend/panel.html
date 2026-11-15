@@ -74,9 +74,17 @@
     .panel-card{background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:24px}
     .panel-card h2{margin:0 0 6px;font-size:20px;color:var(--g-950)}
     .panel-card p{margin:0;color:var(--muted)}
-    .layout{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(300px,1fr);gap:20px;align-items:start}
+    .layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:stretch}
     @media(max-width:860px){.layout{grid-template-columns:1fr}.form-card{order:-1}}
-    .panel-card + .panel-card{margin-top:20px}
+    .tarjeta-semana{margin-top:20px}
+    .tarjeta-proximas{display:flex;flex-direction:column}
+    .resumen-semana{margin-top:auto;padding-top:16px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .resumen-semana:empty{display:none}
+    .dato{padding:12px;border-radius:14px;background:var(--g-50);border:1px solid var(--line)}
+    .dato strong{display:block;font-size:22px;line-height:1.1;color:var(--g-900);font-variant-numeric:tabular-nums}
+    .dato span{font-size:12px;color:var(--muted)}
+    .dos-col{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .form-card .sub{margin-bottom:14px}
     .card-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin-bottom:14px}
     .card-head span{font-size:12px;color:var(--muted-2)}
     .proximas{display:grid;gap:10px}
@@ -101,10 +109,12 @@
     .btn-rojo{background:var(--red-700);color:#fff}
     select{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font:inherit;font-size:15px}
     input[type=time]{width:100%;min-height:46px;padding:10px 14px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-size:15px}
-    .duraciones{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .duraciones{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+    @media(max-width:1000px) and (min-width:861px){.duraciones{grid-template-columns:1fr 1fr}}
+    @media(max-width:420px){.duraciones{grid-template-columns:1fr 1fr}.dos-col{grid-template-columns:1fr}}
     .duracion{position:relative}
     .duracion input{position:absolute;opacity:0}
-    .duracion span{display:block;padding:10px;border:1px solid var(--line-2);border-radius:12px;text-align:center;cursor:pointer;font-weight:700}
+    .duracion span{display:block;padding:9px 6px;border:1px solid var(--line-2);border-radius:12px;text-align:center;cursor:pointer;font-weight:700}
     .duracion small{display:block;font-weight:500;color:var(--muted);font-size:12px}
     .duracion input:checked + span{border-color:var(--g-700);background:var(--g-100);color:var(--g-900)}
     .duracion input:focus-visible + span{outline:3px solid var(--lime);outline-offset:2px}
@@ -140,8 +150,10 @@
     .cal-ev small{display:block;font-size:11px;line-height:1.25;opacity:.9;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .cal-ev.sel{box-shadow:0 0 0 3px var(--lime);z-index:4}
     .cal-ev.pasada{opacity:.55}
-    .cal-ahora{position:absolute;left:0;right:0;z-index:3;border-top:2px solid var(--red-700);pointer-events:none}
-    .cal-ahora::before{content:"";position:absolute;left:-4px;top:-5px;width:8px;height:8px;border-radius:50%;background:var(--red-700)}
+    .cal-vacio{display:none;position:absolute;left:12px;right:12px;top:40%;text-align:center;color:var(--muted);font-weight:600;font-size:13px;padding:10px;border:1px dashed var(--line-2);border-radius:12px;background:#fff}
+    @media(max-width:640px){.cal-vacio{display:block}}
+    .cal-ahora{position:absolute;left:0;right:0;z-index:3;border-top:2px solid var(--g-700);pointer-events:none}
+    .cal-ahora::before{content:"";position:absolute;left:-6px;top:-7px;width:12px;height:12px;border-radius:50%;background:var(--lime);box-shadow:0 0 0 2px var(--g-700),0 0 0 5px rgba(198,222,59,.35)}
     .cal-leyenda{display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:12px;font-size:12px;color:var(--muted)}
     .cal-leyenda span{display:inline-flex;align-items:center;gap:6px}
     .cal-leyenda i{width:12px;height:12px;border-radius:4px;border:1px solid;border-left-width:3px}
@@ -255,20 +267,13 @@
 
     <main class="panel">
       <!-- Paso 3 del plan: aquí irá "Mis tutorías" -->
-      <div class="layout" id="seccionTutor" hidden>
-        <div>
-          <section class="panel-card" aria-labelledby="tProximas">
+      <div id="seccionTutor" hidden>
+       <div class="layout">
+          <section class="panel-card tarjeta-proximas" aria-labelledby="tProximas">
             <div class="card-head"><h2 id="tProximas">Próximas tutorías</h2><span id="horaActual"></span></div>
             <div class="proximas" id="listaProximas"></div>
+            <div class="resumen-semana" id="resumenSemana" aria-label="Resumen de la semana"></div>
           </section>
-          <section class="panel-card" aria-labelledby="tSemana">
-            <div class="card-head"><h2 id="tSemana">Mi horario semanal</h2><span id="totalSemana"></span></div>
-            <div class="cal-tabs" id="calTabs" role="tablist" aria-label="Día de la semana"></div>
-            <div id="listaSemana"></div>
-            <div class="cal-leyenda" id="calLeyenda" aria-label="Colores por materia"></div>
-            <div class="cal-detalle" id="calDetalle" hidden aria-live="polite"></div>
-          </section>
-        </div>
 
         <section class="panel-card form-card" aria-labelledby="tForm">
           <h2 id="tForm">Nueva tutoría</h2>
@@ -284,6 +289,7 @@
                 <ul class="combo-lista" id="listaMaterias" role="listbox" aria-labelledby="tMateriaLabel" hidden></ul>
               </div>
             </div>
+            <div class="dos-col">
             <div class="field">
               <label for="tModulo">Módulo</label>
               <select id="tModulo" required></select>
@@ -294,6 +300,7 @@
                 <option value="1">Lunes</option><option value="2">Martes</option><option value="3">Miércoles</option>
                 <option value="4">Jueves</option><option value="5">Viernes</option><option value="6">Sábado</option>
               </select>
+            </div>
             </div>
             <div class="field">
               <label for="tHora">Hora de inicio</label>
@@ -315,6 +322,15 @@
             </div>
           </form>
         </section>
+       </div>
+          <section class="panel-card tarjeta-semana" aria-labelledby="tSemana">
+            <div class="card-head"><h2 id="tSemana">Mi horario semanal</h2><span id="totalSemana"></span></div>
+            <div class="cal-tabs" id="calTabs" role="tablist" aria-label="Día de la semana"></div>
+            <div id="listaSemana"></div>
+            <div class="cal-leyenda" id="calLeyenda" aria-label="Colores por materia"></div>
+            <div class="cal-detalle" id="calDetalle" hidden aria-live="polite"></div>
+          </section>
+
       </div>
       <!-- Paso 4 del plan: aquí irá "Administración" -->
       <section class="panel-card" id="seccionAdmin" hidden>
@@ -518,7 +534,7 @@
       const ahora = ahoraBogota(), cont = $("listaProximas");
       $("horaActual").textContent = `${DIAS[ahora.dia]} · ${hora12(ahora.min)}`;
       if (!tutorias.length) { cont.replaceChildren(el("div", "vacio", "Aún no tienes tutorías. Agrega la primera con el formulario.")); return; }
-      const orden = tutorias.map(t => ({ t, p: proximaVez(t, ahora) })).sort((a, b) => a.p.faltan - b.p.faltan).slice(0, 3);
+      const orden = tutorias.map(t => ({ t, p: proximaVez(t, ahora) })).sort((a, b) => a.p.faltan - b.p.faltan).slice(0, 4);
       cont.replaceChildren(...orden.map(({ t, p }) => {
         const c = textoCuando(p), fila = el("div", "proxima" + (p.enCurso ? " en-curso" : ""));
         const cuando = el("div", "proxima-cuando"); cuando.append(el("strong", null, c.titulo), el("small", null, c.detalle));
@@ -594,6 +610,7 @@
           ev.addEventListener("click", () => { seleccionadaId = t.id; confirmandoId = null; pintarSemana(); $("calDetalle").scrollIntoView({ block: "nearest", behavior: "smooth" }); });
           col.append(ev);
         });
+        if (!tutorias.some(t => t.dia_semana === d)) col.append(el("div", "cal-vacio", `Sin tutorías el ${DIAS[d].toLowerCase()}`));
         if (d === ahora.dia && ahora.min >= INICIO_MIN && ahora.min <= FIN_MAX) {
           const linea = el("div", "cal-ahora"); linea.style.top = y(ahora.min) + "px"; col.append(linea);
         }
@@ -630,7 +647,18 @@
       }
       caja.replaceChildren(info, acc); caja.hidden = false;
     }
-    function pintarTodo() { pintarProximas(); pintarSemana(); }
+    function pintarResumen() {
+      const caja = $("resumenSemana");
+      if (!tutorias.length) { caja.replaceChildren(); return; }
+      const horas = Math.round(tutorias.reduce((s, t) => s + t.duracion_min, 0) / 60 * 10) / 10;
+      const nMaterias = new Set(tutorias.map(t => t.materia_id)).size;
+      const dato = (valor, texto) => { const d = el("div", "dato"); d.append(el("strong", null, String(valor).replace(".", ",")), el("span", null, texto)); return d; };
+      caja.replaceChildren(
+        dato(tutorias.length, tutorias.length === 1 ? "tutoría por semana" : "tutorías por semana"),
+        dato(horas, horas === 1 ? "hora por semana" : "horas por semana"),
+        dato(nMaterias, nMaterias === 1 ? "materia" : "materias"));
+    }
+    function pintarTodo() { pintarProximas(); pintarSemana(); pintarResumen(); }
 
     // ---------- Formulario ----------
     const duracionElegida = () => Number(document.querySelector('input[name="tDur"]:checked').value);
