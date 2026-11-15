@@ -223,6 +223,29 @@
     .filters button[aria-pressed="true"] span{background:rgba(255,255,255,.2)}
     .mod-tip{position:fixed;z-index:80;width:230px;padding:13px 14px;border-radius:16px;background:rgba(10,43,24,.96);color:#fff;box-shadow:0 18px 40px -12px rgba(10,43,24,.6);pointer-events:none;opacity:0;transform:translateY(6px) scale(.97);transition:opacity 200ms var(--ease),transform 200ms var(--ease)}
     .mod-tip.show{opacity:1;transform:none}
+    /* ---- Avisos de tutoría ---- */
+    .mod-tut{align-self:flex-start;max-width:100%;display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:999px;font-size:9px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .mod-tut::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+    .mod-tut.pronto{background:#fff3d8;color:#8a5a0e;border:1px solid #f0d49a}
+    .mod-tut.curso{background:#e6f1fb;color:#0c447c;border:1px solid #b5d4f4}
+    .mod-tut.curso::before{animation:latido 1.6s ease-in-out infinite}
+    @keyframes latido{50%{opacity:.35}}
+    .sq.tut-pronto{background:#fff3d8;border-color:#e3a531}
+    .sq.tut-curso{background:#e6f1fb;border-color:#378add}
+    .mod-tip .tut{display:block;margin-top:8px;padding:7px 9px;border-radius:10px;background:rgba(255,255,255,.1);font-size:12px;line-height:1.4}
+    .mod-tip .tut b{color:var(--lime)}
+    .aviso-tut{display:flex;align-items:flex-start;gap:12px;margin:0 0 18px;padding:14px 16px;border-radius:18px;border:1px solid;font-size:14px;line-height:1.45}
+    .aviso-tut[hidden]{display:none}
+    .aviso-tut svg{width:22px;height:22px;flex-shrink:0;margin-top:1px}
+    .aviso-tut strong{display:block;font-size:15px}
+    .aviso-tut small{display:block;margin-top:4px;opacity:.85}
+    .aviso-tut.pronto{background:#fff6e2;border-color:#f0d49a;color:#6b4508}
+    .aviso-tut.curso{background:#eaf3fc;border-color:#b5d4f4;color:#0c3b6b}
+    .aviso-tut.hoy{background:#fff;border-color:var(--line);color:var(--muted)}
+    .aviso-tut.hoy strong{color:var(--text);font-size:14px}
+    .best-tut{display:inline-flex;align-items:center;gap:5px;align-self:flex-start;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800}
+    .best-tut.pronto{background:#fff3d8;color:#8a5a0e}
+    .best-tut.curso{background:#e6f1fb;color:#0c447c}
     .mod-tip strong{display:block;font-size:14px}
     .mod-tip .st{display:inline-block;margin:6px 0 8px;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:800;background:rgba(255,255,255,.14)}
     .mod-tip dl{display:grid;grid-template-columns:1fr 1fr;gap:6px 10px;margin:0}
@@ -431,7 +454,7 @@
           </div>
         </div>
         <div class="map-legend" aria-label="Leyenda del mapa">
-          <span><i class="sq selected"></i>Seleccionado</span><span><i class="sq available"></i>Disponible</span><span><i class="sq partial"></i>Parcial</span><span><i class="sq full"></i>Completo</span><span><i class="sq no-data"></i>Cámara sin datos</span><span><i class="sq unmonitored"></i>Sin monitoreo</span>
+          <span><i class="sq selected"></i>Seleccionado</span><span><i class="sq available"></i>Disponible</span><span><i class="sq partial"></i>Parcial</span><span><i class="sq full"></i>Completo</span><span><i class="sq no-data"></i>Cámara sin datos</span><span><i class="sq unmonitored"></i>Sin monitoreo</span><span><i class="sq tut-pronto"></i>Tutoría pronto</span><span><i class="sq tut-curso"></i>En tutoría</span>
         </div>
       </div>
     </section>
@@ -440,6 +463,7 @@
       <div><h3 id="selectedModuleTitle">Módulo 1</h3><p id="selectedModuleSubtitle">Resumen actual del espacio</p></div>
       <span class="state-badge" id="selectedState"><span class="dot"></span>Esperando medición</span>
     </div>
+    <div class="aviso-tut" id="avisoTutoria" role="status" aria-live="polite" hidden></div>
     <section class="main-grid">
       <section class="panel reveal d2" aria-labelledby="roomTitle">
         <div class="panel-head">
@@ -470,7 +494,7 @@
         <div class="summary-top"><div><h3 class="panel-title" id="summaryTitle">Resumen del módulo</h3><p class="panel-subtitle">Resultados de la última captura válida</p></div><span class="tag" id="capacityChip">Capacidad —</span></div>
         <div class="stats-grid">
           <article class="stat"><div class="stat-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="7" r="3.5"/><path d="M2.5 20v-2a6.5 6.5 0 0 1 13 0v2M16 4.5a3.5 3.5 0 0 1 0 6.8M18 14a5 5 0 0 1 3.5 4.8V20"/></svg>Personas</div><div class="stat-value" id="peopleValue">—</div><div class="stat-foot" id="peopleFoot">Esperando dato</div></article>
-          <article class="stat"><div class="stat-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7M5 12h14a2 2 0 0 1 2 2v3H3v-3a2 2 0 0 1 2-2ZM5 17v4m14-4v4"/></svg>Sillas detectadas</div><div class="stat-value" id="seatsValue">—</div><div class="stat-foot" id="seatsFoot">Esperando dato</div></article>
+          <article class="stat"><div class="stat-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7M5 12h14a2 2 0 0 1 2 2v3H3v-3a2 2 0 0 1 2-2ZM5 17v4m14-4v4"/></svg>Sillas</div><div class="stat-value" id="seatsValue">—</div><div class="stat-foot" id="seatsFoot">Esperando dato</div></article>
           <article class="stat red"><div class="stat-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M5 21v-3a7 7 0 0 1 14 0v3M9 13l3 3 3-3"/></svg>Ocupadas</div><div class="stat-value" id="usedValue">—</div><div class="stat-foot" id="usedFoot">Estimación de ocupación</div></article>
           <article class="stat lime"><div class="stat-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 12V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7M5 12h14a2 2 0 0 1 2 2v3H3v-3a2 2 0 0 1 2-2ZM5 17v4m14-4v4"/><path d="m8 7 2 2 4-4"/></svg>Libres</div><div class="stat-value" id="freeValue">—</div><div class="stat-foot" id="freeFoot">Esperando dato</div></article>
         </div>
@@ -532,6 +556,64 @@
     let realtimeConnected = false;
     let moduleIds = [...new Set([...DEFAULT_MODULES, ...FLOOR_LAYOUT_IDS])];
     let activeModules = new Set(DEFAULT_MODULES); // se actualiza con la tabla modulos
+
+    // ---------- Tutorías (horario semanal publicado por los tutores) ----------
+    const AVISO_MIN = 30; // minutos antes de una tutoría en que se empieza a avisar
+    const DIAS_TXT = ["", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"];
+    let tutoriasPublicas = [];
+    const aMinutos = h => { const [a, b] = String(h).split(":").map(Number); return a * 60 + b; };
+    function hora12(m) { const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); return `${((h + 11) % 12) + 1}:${mm} ${h >= 12 ? "p. m." : "a. m."}`; }
+    // Día y hora actuales en Colombia, sin importar la zona horaria del dispositivo.
+    function ahoraBogota() {
+      const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/Bogota", weekday: "short", hour: "numeric", minute: "numeric", hourCycle: "h23" })
+        .formatToParts(new Date()).map(x => [x.type, x.value]));
+      return { dia: { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[p.weekday], min: Number(p.hour) * 60 + Number(p.minute) };
+    }
+    // Tutorías de hoy en un módulo que aún no terminan, ordenadas por hora.
+    function tutoriasHoy(id) {
+      const ahora = ahoraBogota();
+      return tutoriasPublicas.filter(t => String(t.modulo_id) === String(id) && t.dia_semana === ahora.dia && aMinutos(t.hora_fin) > ahora.min)
+        .sort((a, b) => aMinutos(a.hora_inicio) - aMinutos(b.hora_inicio));
+    }
+    // Aviso del módulo: "curso" (está pasando) o "pronto" (empieza en AVISO_MIN minutos o menos).
+    function avisoTutoria(id) {
+      const ahora = ahoraBogota(), t = tutoriasHoy(id)[0];
+      if (!t) return null;
+      const ini = aMinutos(t.hora_inicio), fin = aMinutos(t.hora_fin);
+      if (ahora.min >= ini) return { tipo: "curso", materia: t.materia, ini, fin };
+      if (ini - ahora.min <= AVISO_MIN) return { tipo: "pronto", materia: t.materia, ini, fin, faltan: ini - ahora.min };
+      return null;
+    }
+    const textoCorto = a => a.tipo === "curso" ? "En tutoría" : `En ${a.faltan} min`; // corto: cabe en los módulos pequeños del mapa
+    async function fetchTutoriasPublicas() {
+      // Solo columnas públicas: hora, módulo y materia (nunca el tutor). RLS oculta las de tutores inactivos.
+      try {
+        const r = await fetch(`${SUPABASE_URL}/rest/v1/tutorias?select=modulo_id,dia_semana,hora_inicio,hora_fin,materia:materias(nombre)`,
+          { cache: "no-store", headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Accept: "application/json" } });
+        if (!r.ok) return;
+        const filas = await r.json();
+        if (Array.isArray(filas)) tutoriasPublicas = filas.map(f => ({ ...f, materia: f.materia?.nombre || "Tutoría" }));
+      } catch (_) { /* si falla, se conservan los datos anteriores */ }
+    }
+    function renderAvisoModulo() {
+      const caja = $("avisoTutoria"), a = avisoTutoria(selectedModule);
+      const icono = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+      const resto = tutoriasHoy(selectedModule).filter(t => !a || aMinutos(t.hora_inicio) !== a.ini);
+      const masTarde = resto.length ? "Más tarde hoy: " + resto.map(t => `${t.materia} a las ${hora12(aMinutos(t.hora_inicio))}`).join(" · ") : "";
+      const texto = el("div");
+      if (a) {
+        const titulo = a.tipo === "curso" ? `Tutoría de ${a.materia} en curso` : `Tutoría de ${a.materia} en ${a.faltan} min`;
+        const detalle = a.tipo === "curso" ? `Hasta las ${hora12(a.fin)} · Si vienes a estudiar, este módulo está en uso.`
+                                           : `De ${hora12(a.ini)} a ${hora12(a.fin)} · Si vienes a estudiar, este módulo se ocupará pronto.`;
+        texto.append(el("strong", "", titulo), document.createTextNode(detalle));
+        if (masTarde) texto.append(el("small", "", masTarde));
+        caja.className = "aviso-tut " + a.tipo;
+      } else if (masTarde) {
+        texto.append(el("strong", "", "Tutorías hoy en este módulo"), document.createTextNode(masTarde.replace("Más tarde hoy: ", "")));
+        caja.className = "aviso-tut hoy";
+      } else { caja.hidden = true; caja.replaceChildren(); return; }
+      caja.innerHTML = icono; caja.append(texto); caja.hidden = false;
+    }
 
     // ---------- Utilidades ----------
     function safeNumber(v){const n=Number(v);return Number.isFinite(n)?Math.max(0,n):0}
@@ -609,7 +691,10 @@
         for(let k=0;k<Math.min(seats,10);k++){const d=el("i",k<used?"u":"");dots.appendChild(d)}
         foot.append(dots);if(seats>10)foot.append(el("span","",`+${seats-10}`));
       }else if(st.css!=="unmonitored")foot.append(el("span","",st.meta));
-      room.append(el("span","mod-glare"),head,el("span","mod-chip",st.label),foot);
+      room.append(el("span","mod-glare"),head,el("span","mod-chip",st.label));
+      const aviso=avisoTutoria(id);
+      if(aviso){room.append(el("span","mod-tut "+aviso.tipo,textoCorto(aviso)));room.setAttribute("aria-label",room.getAttribute("aria-label")+` ${aviso.tipo==="curso"?"Tutoría en curso":"Tutoría en "+aviso.faltan+" minutos"}: ${aviso.materia}.`)}
+      room.append(foot);
       const age=latest?(Date.now()-(parseDate(latest.fecha_hora)?.getTime()||0))/60000:Infinity;
       if(age<3)room.appendChild(el("span","mod-live"));
       room.addEventListener("click",e=>{
@@ -633,6 +718,8 @@
         const dl=el("dl");[["Personas",fmt(latest.personas)],["Sillas",fmt(seats)],["Libres",fmt(Math.max(0,seats-used))],["Ocupación",seats?`${Math.round(used/seats*100)}%`:"—"]].forEach(([k,v])=>dl.append(el("dt","",k),el("dd","",v)));
         tip.append(dl,el("small","",`Última lectura ${timeAgo(latest.fecha_hora).toLowerCase()}`));
       }else tip.append(el("small","",st.css==="unmonitored"?"Este espacio todavía no tiene cámara.":"La cámara está configurada, pero aún no envía lecturas."));
+      const aviso=avisoTutoria(id);
+      if(aviso){const t=el("span","tut");const b=el("b","",aviso.tipo==="curso"?"En tutoría: ":`En ${aviso.faltan} min: `);t.append(b,`${aviso.materia} · ${hora12(aviso.ini)} – ${hora12(aviso.fin)}`);tip.append(t)}
       const r=room.getBoundingClientRect(),w=230;let left=Math.min(window.innerWidth-w-10,Math.max(10,r.left+r.width/2-w/2));
       tip.style.left=`${left}px`;tip.classList.add("show");
       const h=tip.offsetHeight;tip.style.top=`${r.top-h-12>8?r.top-h-12:r.bottom+12}px`;
@@ -674,6 +761,8 @@
           <span class="best-bar"><i style="width:${pct}%"></i></span>
           <span class="best-meta"><span>${fmt(r.personas)} ${safeNumber(r.personas)===1?"persona":"personas"} · ${pct}% ocupado</span><span class="best-go">Ver sala →</span></span>`;
         b.querySelector(".best-time").textContent=timeAgo(r.fecha_hora);
+        const aviso=avisoTutoria(id);
+        if(aviso){const t=el("span","best-tut "+aviso.tipo,aviso.tipo==="curso"?`En tutoría de ${aviso.materia}`:`Tutoría de ${aviso.materia} en ${aviso.faltan} min`);b.querySelector(".best-bar").after(t);b.setAttribute("aria-label",b.getAttribute("aria-label").replace(" Ver sala."," "+t.textContent+". Ver sala."))}
         b.addEventListener("click",()=>selectModule(id,true));
         return b;
       });
@@ -821,7 +910,7 @@
       $("selectedModuleSubtitle").textContent=latest?`Última lectura: ${formatDate(latest.fecha_hora)} · ${timeAgo(latest.fecha_hora).toLowerCase()}`:(monitoredSet().has(selectedModule)?"Este módulo tiene cámara, pero aún no hay una lectura válida.":"Este espacio todavía no tiene una cámara asociada.");
       const n=Math.min(MAX_CHART_POINTS,records.length);
       $("chartSubtitle").textContent=`Personas y sillas ocupadas en las últimas ${n} capturas del Módulo ${selectedModule}.`;$("chartTag").textContent=n?`${n} lecturas`:"Sin lecturas";
-      renderCurrent(latest);drawChart(records);
+      renderCurrent(latest);drawChart(records);renderAvisoModulo();
       $("trendFoot").textContent=latest?`Último registro ${timeAgo(latest.fecha_hora).toLowerCase()}.`:"Las nuevas capturas aparecerán automáticamente.";
     }
     function renderAll(){refreshModuleIds();renderBuildingMap();renderOverview();renderBest();renderSelectedModule();updateNavBadges()}
@@ -840,7 +929,7 @@
     async function refreshDashboard(){
       if(isRefreshing){refreshPending=true;return}isRefreshing=true;const btn=$("refreshButton");btn.disabled=true;$("refreshIcon").classList.add("spin");
       try{
-        const [health,current,history]=await Promise.all([fetchJson("/health"),fetchJson("/ocupacion/actual"),fetchJson("/ocupacion/historial?limite=500"),fetchActiveModules()]);
+        const [health,current,history]=await Promise.all([fetchJson("/health"),fetchJson("/ocupacion/actual"),fetchJson("/ocupacion/historial?limite=500"),fetchActiveModules(),fetchTutoriasPublicas()]);
         const rows=Array.isArray(history.registros)?history.registros.slice():[];
         if(current?.encontrado&&current.registro&&!rows.some(r=>String(r.id)===String(current.registro.id)))rows.push(current.registro);
         setRecords(rows);writeStorage(CACHE_KEY,JSON.stringify({t:Date.now(),rows:allRecords.slice(0,200)}));
@@ -877,6 +966,8 @@
       let rt;window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>drawChart(recordsForModule()),120)});
       setInterval(()=>{if(!realtimeConnected)refreshDashboard()},REFRESH_FALLBACK_MS);
       setInterval(()=>{if(realtimeConnected)refreshDashboard()},REFRESH_SAFETY_MS);
+      setInterval(()=>{renderBuildingMap();renderBest();renderAvisoModulo()},60000); // "en X min" se mantiene al día
+      setInterval(fetchTutoriasPublicas,5*60000); // por si un tutor cambia su horario
     })();
   </script>
 
