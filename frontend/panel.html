@@ -247,10 +247,12 @@
               <input type="time" id="tHora" min="07:00" max="20:15" step="60" value="08:00" required>
             </div>
             <div class="field">
-              <label id="tDurLabel">Duración</label>
+              <label id="tDurLabel">Duración <span style="font-weight:500;color:var(--muted)">(bloques de 45 min)</span></label>
               <div class="duraciones" role="radiogroup" aria-labelledby="tDurLabel">
-                <label class="duracion"><input type="radio" name="tDur" value="45"><span>Sencilla<small>45 minutos</small></span></label>
-                <label class="duracion"><input type="radio" name="tDur" value="90" checked><span>Doble<small>90 minutos</small></span></label>
+                <label class="duracion"><input type="radio" name="tDur" value="45"><span>Sencilla<small>45 min</small></span></label>
+                <label class="duracion"><input type="radio" name="tDur" value="90" checked><span>Doble<small>1 h 30 min</small></span></label>
+                <label class="duracion"><input type="radio" name="tDur" value="135"><span>Triple<small>2 h 15 min</small></span></label>
+                <label class="duracion"><input type="radio" name="tDur" value="180"><span>Cuádruple<small>3 h</small></span></label>
               </div>
             </div>
             <p class="resumen" id="tResumen" aria-live="polite"></p>
@@ -414,6 +416,10 @@
     // =====================================================================
     const DIAS = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
     const INICIO_MIN = 7 * 60, FIN_MAX = 21 * 60;
+    // Duración en bloques de 45 min. Para permitir más bloques, agrégalos aquí,
+    // en el formulario y en la regla duracion_en_bloques_de_45 de Supabase.
+    const BLOQUES = { 45: "Sencilla", 90: "Doble", 135: "Triple", 180: "Cuádruple" };
+    const nombreDuracion = min => BLOQUES[min] || `${min} min`;
     let tutorias = [], modulos = [], editandoId = null, confirmandoId = null, relojTutor = null;
 
     const aMin = h => { const [a, b] = String(h).split(":").map(Number); return a * 60 + b; };
@@ -460,7 +466,7 @@
         const c = textoCuando(p), fila = el("div", "proxima" + (p.enCurso ? " en-curso" : ""));
         const cuando = el("div", "proxima-cuando"); cuando.append(el("strong", null, c.titulo), el("small", null, c.detalle));
         const info = el("div", "proxima-info");
-        info.append(el("strong", null, `${hora12(p.ini)} – ${hora12(p.fin)}`), el("small", null, `${nombreModulo(t.modulo_id)} · ${t.duracion_min === 90 ? "Doble" : "Sencilla"}`));
+        info.append(el("strong", null, `${hora12(p.ini)} – ${hora12(p.fin)}`), el("small", null, `${nombreModulo(t.modulo_id)} · ${nombreDuracion(t.duracion_min)}`));
         fila.append(cuando, info); return fila;
       }));
     }
@@ -477,7 +483,7 @@
         delDia.forEach(t => {
           const fila = el("div", "fila" + (t.id === editandoId ? " editando" : ""));
           const horaTxt = el("span", "fila-hora", `${hora12(aMin(t.hora_inicio))} – ${hora12(aMin(t.hora_fin))}`);
-          const mod = el("span", "fila-mod", nombreModulo(t.modulo_id)); mod.append(el("span", "chip", t.duracion_min === 90 ? "Doble" : "Sencilla"));
+          const mod = el("span", "fila-mod", nombreModulo(t.modulo_id)); mod.append(el("span", "chip", nombreDuracion(t.duracion_min)));
           fila.append(horaTxt, mod);
           if (confirmandoId === t.id) {
             const conf = el("span", "confirmar", "¿Eliminar?");
