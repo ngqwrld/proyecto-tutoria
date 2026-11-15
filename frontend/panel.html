@@ -406,7 +406,7 @@
 
         <section class="panel-card form-card" aria-labelledby="tForm">
           <h2 id="tForm">Nueva tutoría</h2>
-          <p class="sub" id="formSub">Se repite cada semana: de lunes a viernes entre 7:00 a.m. y 8:00 p.m., y los sábados hasta las 12:00 m.</p>
+          <p class="sub" id="formSub">Se repite cada semana: de lunes a viernes entre 7:30 a.m. y 8:00 p.m., y los sábados entre 7:30 a.m. y 12:00 m.</p>
           <div class="msg" id="msgTutoria" role="alert"></div>
           <form id="formTutoria" novalidate>
             <div class="field">
@@ -433,7 +433,7 @@
             </div>
             <div class="field">
               <label for="tHora">Hora de inicio</label>
-              <input type="time" id="tHora" min="07:00" max="19:15" step="60" value="08:00" required>
+              <input type="time" id="tHora" min="07:30" max="19:15" step="60" value="08:00" required>
             </div>
             <div class="field">
               <label id="tDurLabel">Duración <span style="font-weight:500;color:var(--muted)">(bloques de 45 min)</span></label>
@@ -711,7 +711,7 @@
     // Panel del tutor: Mis tutorías
     // =====================================================================
     const DIAS = ["", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
-    const INICIO_MIN = 7 * 60, FIN_MAX = 20 * 60, FIN_SABADO = 12 * 60;
+    const INICIO_MIN = 7 * 60, HORA_MIN_TUTORIA = 7 * 60 + 30, FIN_MAX = 20 * 60, FIN_SABADO = 12 * 60;
     const finMaxDe = dia => dia === 6 ? FIN_SABADO : FIN_MAX; // el sábado la sede cierra al mediodía
     // Duración en bloques de 45 min. Para permitir más bloques, agrégalos aquí,
     // en el formulario y en la regla duracion_en_bloques_de_45 de Supabase.
@@ -904,7 +904,7 @@
       const ini = aMin(h), fin = ini + duracionElegida();
       const diaNum = Number($("tDia").value), dia = DIAS[diaNum], finMax = finMaxDe(diaNum);
       $("tHora").max = `${String(Math.floor((finMax - 45) / 60)).padStart(2, "0")}:${String((finMax - 45) % 60).padStart(2, "0")}`;
-      if (ini < INICIO_MIN) { r.textContent = "Las tutorías empiezan desde las 7:00 a. m."; r.className = "resumen mal"; return false; }
+      if (ini < HORA_MIN_TUTORIA) { r.textContent = "Las tutorías empiezan desde las 7:30 a. m."; r.className = "resumen mal"; return false; }
       if (fin > finMax) {
         r.textContent = `Terminaría a las ${hora12(fin)}; ` + (diaNum === 6 ? "los sábados debe terminar a las 12:00 m. o antes." : "debe terminar a las 8:00 p. m. o antes.");
         r.className = "resumen mal"; return false;
@@ -999,7 +999,7 @@
       }
       if (txt.includes("sabado_hasta_mediodia")) return "Los sábados la tutoría debe terminar a las 12:00 m. o antes.";
       if (txt.includes("termina_antes_de_las_20")) return "La tutoría debe terminar a las 8:00 p. m. o antes.";
-      if (txt.includes("hora_inicio_check")) return "Las tutorías empiezan desde las 7:00 a. m.";
+      if (txt.includes("hora_inicio_check")) return "Las tutorías empiezan desde las 7:30 a. m.";
       if (txt.includes("row-level security") || err?.code === "42501") return "No tienes permiso para esta acción. Vuelve a ingresar.";
       return traducirError(err);
     }
