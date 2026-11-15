@@ -55,6 +55,8 @@
     .btn-ghost{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);color:#fff}
     .btn-ghost:hover,.btn-ghost:focus-visible{background:rgba(255,255,255,.14);box-shadow:0 0 0 1px rgba(255,255,255,.35),0 10px 30px -6px rgba(198,222,59,.35)}
     .btn-dark{background:var(--g-800);color:#fff}
+    .btn-light{background:#fff;border-color:var(--line-2);color:var(--g-900)}
+    .btn-light:hover,.btn-light:focus-visible{background:var(--g-50);box-shadow:0 0 0 1px var(--line-2),0 10px 30px -10px rgba(39,133,74,.35)}
     .btn-dark:hover,.btn-dark:focus-visible{background:var(--g-900);box-shadow:0 0 0 1px rgba(39,133,74,.5),0 10px 30px -6px rgba(39,133,74,.55)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 
@@ -357,6 +359,9 @@
         <button class="btn btn-dark shine chain-trigger" id="refreshButton" type="button" aria-label="Actualizar datos">
           <svg id="refreshIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M5.6 9A7 7 0 0 1 17.3 6L20 12M4 12l2.7 6A7 7 0 0 0 18.4 15"/></svg><span>Actualizar</span>
         </button>
+        <a class="btn btn-light" id="loginButton" href="/panel" aria-label="Ingresar como tutor o administrador">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/></svg><span id="loginLabel">Ingresar</span>
+        </a>
       </div>
     </header>
 
@@ -868,6 +873,7 @@
       setupMapFilters();setupSearch();setupBottomNav();renderAll();loadRoom3d();refreshDashboard();
       if("requestIdleCallback" in window)requestIdleCallback(loadRealtime,{timeout:2000});else setTimeout(loadRealtime,800);
       $("refreshButton").addEventListener("click",refreshDashboard);
+      if(readStorage("sb-prxwwzgoklwjdciwuvdd-auth-token"))$("loginLabel").textContent="Mi panel";
       let rt;window.addEventListener("resize",()=>{clearTimeout(rt);rt=setTimeout(()=>drawChart(recordsForModule()),120)});
       setInterval(()=>{if(!realtimeConnected)refreshDashboard()},REFRESH_FALLBACK_MS);
       setInterval(()=>{if(realtimeConnected)refreshDashboard()},REFRESH_SAFETY_MS);

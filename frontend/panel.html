@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ingreso | Monitor de tutorías UTS</title>
+  <meta name="description" content="Ingreso de tutores y administradores del monitor de módulos de tutoría UTS.">
+  <meta name="robots" content="noindex">
+  <link rel="preconnect" href="https://prxwwzgoklwjdciwuvdd.supabase.co" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+  <style>
+    :root{
+      --g-950:#0a2b18; --g-900:#0f3a22; --g-800:#16502e; --g-700:#1d6a3b; --g-600:#27854a; --g-100:#e4f2e6; --g-50:#f3f9f3;
+      --lime:#c6de3b; --red-700:#c53842; --red-100:#fde9eb; --amber-700:#9a6510; --amber-100:#fff3d8;
+      --bg:#f2f6f2; --surface:#fff; --line:#e0e8df; --line-2:#ccdacb;
+      --text:#13251a; --muted:#5f7064; --muted-2:#8a978d;
+      --shadow:0 1px 2px rgba(15,58,34,.04),0 12px 32px -12px rgba(15,58,34,.14);
+      --font:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    *{box-sizing:border-box}
+    html{min-width:320px;background:var(--bg)}
+    body{margin:0;color:var(--text);font:14px/1.55 var(--font);background:var(--bg);-webkit-font-smoothing:antialiased;min-height:100vh}
+    button,input{font:inherit;color:inherit}
+    :focus-visible{outline:3px solid var(--lime);outline-offset:3px}
+    [hidden]{display:none!important}
+    .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+    a{color:var(--g-700)}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:10px 18px;border:1px solid transparent;border-radius:13px;font-weight:700;font-size:14px;cursor:pointer;text-decoration:none;transition:background .2s,box-shadow .2s,transform .2s}
+    .btn:active{transform:scale(.98)}
+    .btn:disabled{opacity:.6;cursor:wait}
+    .btn-dark{background:var(--g-800);color:#fff}.btn-dark:hover{background:var(--g-900)}
+    .btn-light{background:#fff;border-color:var(--line-2);color:var(--g-900)}.btn-light:hover{background:var(--g-50)}
+    .btn-link{background:none;border:0;padding:0;min-height:0;color:var(--g-700);font-weight:700;text-decoration:underline;cursor:pointer}
+    .btn svg{width:17px;height:17px}
+
+    /* ---- Ingreso ---- */
+    .login-wrap{min-height:100vh;display:grid;place-items:center;padding:24px 16px}
+    .card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:28px 26px}
+    .card-logo{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+    .card-logo img{width:64px;height:auto}
+    .card-logo p{margin:0;font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+    h1{margin:0 0 4px;font-size:22px;line-height:1.25;color:var(--g-950)}
+    .sub{margin:0 0 20px;color:var(--muted)}
+    label{display:block;font-weight:700;font-size:13px;margin:0 0 6px}
+    .field{margin-bottom:14px}
+    input[type=email],input[type=password],input[type=text]{width:100%;min-height:46px;padding:10px 14px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-size:15px}
+    input:focus{border-color:var(--g-600);outline:3px solid rgba(39,133,74,.18);outline-offset:0}
+    .code-input{letter-spacing:.4em;text-align:center;font-size:22px!important;font-weight:800}
+    .hint{margin:6px 0 0;font-size:12px;color:var(--muted-2)}
+    .actions{display:flex;flex-direction:column;gap:10px;margin-top:18px}
+    .actions .btn{width:100%}
+    .alt{margin:18px 0 0;padding-top:16px;border-top:1px solid var(--line);font-size:13px;color:var(--muted);text-align:center}
+    .msg{display:none;margin:0 0 14px;padding:10px 12px;border-radius:12px;font-size:13px;font-weight:600}
+    .msg.show{display:block}
+    .msg.error{background:var(--red-100);color:var(--red-700)}
+    .msg.ok{background:var(--g-100);color:var(--g-800)}
+    .back{display:inline-flex;margin-top:14px;font-size:13px}
+
+    /* ---- Panel ---- */
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px clamp(14px,3vw,40px);background:#fff;border-bottom:1px solid var(--line)}
+    .brand{display:flex;align-items:center;gap:12px;min-width:0}
+    .brand img{width:58px;height:auto}
+    .brand-title{margin:0;font-size:16px;font-weight:800;color:var(--g-950)}
+    .brand-sub{margin:0;font-size:12px;color:var(--muted)}
+    .user{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+    .user-name{font-weight:700}
+    .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+    .badge-tutor{background:var(--g-100);color:var(--g-800)}
+    .badge-admin{background:var(--amber-100);color:var(--amber-700)}
+    main.panel{max-width:1100px;margin:0 auto;padding:28px clamp(14px,3vw,40px)}
+    .panel-card{background:#fff;border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:24px}
+    .panel-card h2{margin:0 0 6px;font-size:20px;color:var(--g-950)}
+    .panel-card p{margin:0;color:var(--muted)}
+    .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
+    .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+
+  <!-- Cargando -->
+  <div class="loading" id="vistaCarga" role="status">
+    <svg class="spin" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 12a9 9 0 1 1-6.2-8.56"/></svg>
+    <span class="sr-only">Cargando…</span>
+  </div>
+
+  <!-- Ingreso -->
+  <div class="login-wrap" id="vistaIngreso" hidden>
+    <div class="card">
+      <div class="card-logo">
+        <img src="/assets/logo-uts.png" alt="UTS">
+        <p>Monitor de tutorías</p>
+      </div>
+      <div class="msg" id="msg" role="alert"></div>
+
+      <!-- Paso 1: correo y contraseña -->
+      <form id="formClave" novalidate>
+        <h1>Ingresar</h1>
+        <p class="sub">Para tutores y administradores de las UTS.</p>
+        <div class="field">
+          <label for="correo">Correo institucional</label>
+          <input type="email" id="correo" autocomplete="username" placeholder="usuario@uts.edu.co" required>
+        </div>
+        <div class="field">
+          <label for="clave">Contraseña</label>
+          <input type="password" id="clave" autocomplete="current-password" required>
+        </div>
+        <div class="actions">
+          <button class="btn btn-dark" type="submit" id="btnIngresar">Ingresar</button>
+        </div>
+        <p class="alt">¿Primera vez o no recuerdas tu contraseña?<br>
+          <button class="btn-link" type="button" id="btnPedirCodigo">Recibir un código en mi correo</button></p>
+        <a class="back" href="/">← Volver a la página de ocupación</a>
+      </form>
+
+      <!-- Paso 2: código enviado al correo -->
+      <form id="formCodigo" novalidate hidden>
+        <h1>Revisa tu correo</h1>
+        <p class="sub">Enviamos un código a <strong id="correoEnviado"></strong>. Puede tardar un minuto; revisa también la carpeta de spam.</p>
+        <div class="field">
+          <label for="codigo">Código</label>
+          <input type="text" id="codigo" class="code-input" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+        </div>
+        <div class="actions">
+          <button class="btn btn-dark" type="submit" id="btnVerificar">Verificar código</button>
+          <button class="btn btn-light" type="button" id="btnReenviar">Reenviar código</button>
+        </div>
+        <button class="btn-link back" type="button" data-volver>← Usar otro correo</button>
+      </form>
+
+      <!-- Paso 3: crear contraseña -->
+      <form id="formNuevaClave" novalidate hidden>
+        <h1>Crea tu contraseña</h1>
+        <p class="sub">La usarás para ingresar las próximas veces, sin esperar un código.</p>
+        <div class="field">
+          <label for="nuevaClave">Nueva contraseña</label>
+          <input type="password" id="nuevaClave" autocomplete="new-password" minlength="8" required>
+          <p class="hint">Mínimo 8 caracteres.</p>
+        </div>
+        <div class="field">
+          <label for="nuevaClave2">Repite la contraseña</label>
+          <input type="password" id="nuevaClave2" autocomplete="new-password" minlength="8" required>
+        </div>
+        <div class="actions">
+          <button class="btn btn-dark" type="submit" id="btnGuardarClave">Guardar y entrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Panel (tutor o admin) -->
+  <div id="vistaPanel" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <img src="/assets/logo-uts.png" alt="UTS">
+        <div>
+          <p class="brand-title" id="panelTitulo">Panel</p>
+          <p class="brand-sub">Monitor de módulos de tutoría</p>
+        </div>
+      </div>
+      <div class="user">
+        <span class="user-name" id="usuarioNombre"></span>
+        <span class="badge" id="usuarioRol"></span>
+        <a class="btn btn-light" href="/">Ver ocupación</a>
+        <button class="btn btn-dark" type="button" id="btnSalir">Salir</button>
+      </div>
+    </header>
+
+    <main class="panel">
+      <!-- Paso 3 del plan: aquí irá "Mis tutorías" -->
+      <section class="panel-card" id="seccionTutor" hidden>
+        <h2>Mis tutorías</h2>
+        <p>Aquí podrás registrar, editar y eliminar tus tutorías de la semana.</p>
+      </section>
+      <!-- Paso 4 del plan: aquí irá "Administración" -->
+      <section class="panel-card" id="seccionAdmin" hidden>
+        <h2>Administración</h2>
+        <p>Aquí podrás gestionar tutores y módulos, y ver todas las tutorías.</p>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // La clave Publishable está diseñada para el navegador. No insertar service_role ni secret.
+    const SUPABASE_URL = "https://prxwwzgoklwjdciwuvdd.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_otBd9oTl_hiOKmfmSsGx0Q_lv44OXem";
+    const DOMINIO = "@uts.edu.co";
+    const ESPERA_REENVIO_S = 60;
+
+    const $ = id => document.getElementById(id);
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+    });
+
+    let correoActual = "", temporizador = null, perfil = null;
+
+    // ---------- Mensajes ----------
+    function mostrarMsg(texto, tipo = "error") { const m = $("msg"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function ocultarMsg() { $("msg").className = "msg"; }
+    function traducirError(error) {
+      const t = String(error?.message || error || "").toLowerCase();
+      if (t.includes("invalid login credentials")) return "Correo o contraseña incorrectos.";
+      if (t.includes("database error saving new user") || t.includes("no autorizado"))
+        return "Este correo no está autorizado. Pide al administrador que te registre.";
+      if (t.includes("email address not authorized"))
+        return "El envío de correos aún no está configurado. Avisa al administrador.";
+      if (t.includes("rate limit") || t.includes("only request this after") || t.includes("security purposes"))
+        return "Se enviaron demasiados códigos. Espera un minuto e inténtalo de nuevo.";
+      if (t.includes("expired") || t.includes("invalid") && t.includes("token"))
+        return "El código es incorrecto o ya venció. Pide uno nuevo.";
+      if (t.includes("should be different")) return "La nueva contraseña debe ser distinta a la anterior.";
+      if (t.includes("password")) return "La contraseña no cumple los requisitos. Usa mínimo 8 caracteres.";
+      if (t.includes("failed to fetch") || t.includes("network")) return "No hay conexión. Revisa tu internet.";
+      return "Algo salió mal. Inténtalo de nuevo.";
+    }
+    function correoValido(c) { return /^[^\s@]+@uts\.edu\.co$/.test(c); }
+    async function conBoton(boton, tarea) {
+      const texto = boton.textContent; boton.disabled = true; boton.textContent = "Un momento…";
+      try { await tarea(); } finally { boton.disabled = false; boton.textContent = texto; }
+    }
+
+    // ---------- Vistas ----------
+    function verVista(id) { ["vistaCarga", "vistaIngreso", "vistaPanel"].forEach(v => $(v).hidden = v !== id); }
+    function verPaso(id) {
+      ["formClave", "formCodigo", "formNuevaClave"].forEach(f => $(f).hidden = f !== id);
+      const primero = $(id).querySelector("input"); if (primero) setTimeout(() => primero.focus(), 50);
+    }
+
+    // ---------- Paso 1: correo y contraseña ----------
+    $("formClave").addEventListener("submit", e => {
+      e.preventDefault(); ocultarMsg();
+      const correo = $("correo").value.trim().toLowerCase(), clave = $("clave").value;
+      if (!correoValido(correo)) return mostrarMsg("Escribe tu correo institucional (termina en " + DOMINIO + ").");
+      if (!clave) return mostrarMsg("Escribe tu contraseña.");
+      conBoton($("btnIngresar"), async () => {
+        const { error } = await sb.auth.signInWithPassword({ email: correo, password: clave });
+        if (error) return mostrarMsg(traducirError(error));
+        await entrar();
+      });
+    });
+
+    // ---------- Paso 2: pedir y verificar código ----------
+    async function enviarCodigo(boton) {
+      ocultarMsg();
+      const correo = $("correo").value.trim().toLowerCase();
+      if (!correoValido(correo)) { verPaso("formClave"); return mostrarMsg("Escribe tu correo institucional (termina en " + DOMINIO + ")."); }
+      await conBoton(boton, async () => {
+        const { error } = await sb.auth.signInWithOtp({ email: correo, options: { shouldCreateUser: true } });
+        if (error) { mostrarMsg(traducirError(error)); return; }
+        correoActual = correo; $("correoEnviado").textContent = correo; $("codigo").value = "";
+        verPaso("formCodigo"); mostrarMsg("Código enviado.", "ok"); iniciarEsperaReenvio();
+      });
+    }
+    function iniciarEsperaReenvio() {
+      const b = $("btnReenviar"); let s = ESPERA_REENVIO_S; clearInterval(temporizador);
+      b.disabled = true; b.textContent = `Reenviar en ${s} s`;
+      temporizador = setInterval(() => { s--; if (s <= 0) { clearInterval(temporizador); b.disabled = false; b.textContent = "Reenviar código"; } else b.textContent = `Reenviar en ${s} s`; }, 1000);
+    }
+    $("btnPedirCodigo").addEventListener("click", e => enviarCodigo(e.currentTarget));
+    $("btnReenviar").addEventListener("click", e => enviarCodigo(e.currentTarget));
+    document.querySelectorAll("[data-volver]").forEach(b => b.addEventListener("click", () => { ocultarMsg(); clearInterval(temporizador); verPaso("formClave"); }));
+
+    $("formCodigo").addEventListener("submit", e => {
+      e.preventDefault(); ocultarMsg();
+      const codigo = $("codigo").value.replace(/\D/g, "");
+      if (codigo.length < 6) return mostrarMsg("Escribe el código completo que llegó a tu correo.");
+      conBoton($("btnVerificar"), async () => {
+        const { error } = await sb.auth.verifyOtp({ email: correoActual, token: codigo, type: "email" });
+        if (error) return mostrarMsg(traducirError(error));
+        clearInterval(temporizador); verPaso("formNuevaClave"); ocultarMsg();
+      });
+    });
+
+    // ---------- Paso 3: crear contraseña ----------
+    $("formNuevaClave").addEventListener("submit", e => {
+      e.preventDefault(); ocultarMsg();
+      const c1 = $("nuevaClave").value, c2 = $("nuevaClave2").value;
+      if (c1.length < 8) return mostrarMsg("La contraseña debe tener mínimo 8 caracteres.");
+      if (c1 !== c2) return mostrarMsg("Las contraseñas no coinciden.");
+      conBoton($("btnGuardarClave"), async () => {
+        const { error } = await sb.auth.updateUser({ password: c1, data: { contrasena_creada: true } });
+        if (error) return mostrarMsg(traducirError(error));
+        await entrar();
+      });
+    });
+
+    // ---------- Sesión y rol ----------
+    async function entrar() {
+      const { data: { user } } = await sb.auth.getUser();
+      if (!user) { verVista("vistaIngreso"); verPaso("formClave"); return; }
+
+      // RLS: cada usuario solo puede leer su propio perfil.
+      const { data, error } = await sb.from("perfiles").select("nombre, rol, activo").eq("user_id", user.id).maybeSingle();
+      if (error || !data || !data.activo) {
+        await sb.auth.signOut();
+        verVista("vistaIngreso"); verPaso("formClave");
+        return mostrarMsg(error ? "No se pudo cargar tu perfil. Inténtalo de nuevo." : "Tu cuenta está desactivada. Habla con el administrador.");
+      }
+
+      perfil = data;
+      $("usuarioNombre").textContent = perfil.nombre;
+      const esAdmin = perfil.rol === "admin";
+      $("usuarioRol").textContent = esAdmin ? "Admin" : "Tutor";
+      $("usuarioRol").className = "badge " + (esAdmin ? "badge-admin" : "badge-tutor");
+      $("panelTitulo").textContent = esAdmin ? "Administración" : "Mis tutorías";
+      document.title = (esAdmin ? "Administración" : "Mis tutorías") + " | Monitor de tutorías UTS";
+      $("seccionTutor").hidden = esAdmin;
+      $("seccionAdmin").hidden = !esAdmin;
+      verVista("vistaPanel");
+    }
+
+    $("btnSalir").addEventListener("click", async () => {
+      await sb.auth.signOut(); perfil = null;
+      $("clave").value = ""; verVista("vistaIngreso"); verPaso("formClave"); mostrarMsg("Sesión cerrada.", "ok");
+    });
+
+    // Si la sesión se cierra en otra pestaña, esta también vuelve al ingreso.
+    sb.auth.onAuthStateChange(evento => {
+      if (evento === "SIGNED_OUT" && perfil) { perfil = null; verVista("vistaIngreso"); verPaso("formClave"); }
+    });
+
+    // ---------- Inicio ----------
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) await entrar(); else { verVista("vistaIngreso"); verPaso("formClave"); }
+    })();
+  </script>
+</body>
+</html>
