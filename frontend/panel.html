@@ -562,7 +562,14 @@
     let correoActual = "", temporizador = null, perfil = null;
 
     // ---------- Mensajes ----------
-    function mostrarMsg(texto, tipo = "error") { const m = $("msg"); m.textContent = texto; m.className = "msg show " + tipo; }
+    // Los mensajes de confirmación (verdes) se ocultan solos a los 4 s; los de error se quedan fijos.
+    function autoOcultar(m, tipo) {
+      clearTimeout(m._t);
+      if (tipo !== "ok") return;
+      const texto = m.textContent;
+      m._t = setTimeout(() => { if (m.textContent === texto && m.classList.contains("ok")) m.className = "msg"; }, 4000);
+    }
+    function mostrarMsg(texto, tipo = "error") { const m = $("msg"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); }
     function ocultarMsg() { $("msg").className = "msg"; }
     function traducirError(error) {
       const t = String(error?.message || error || "").toLowerCase();
@@ -932,7 +939,7 @@
       else if (e.key === "Escape" && abierta) { e.preventDefault(); cerrarLista(); }
     });
 
-    function msgTutoria(texto, tipo = "error") { const m = $("msgTutoria"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function msgTutoria(texto, tipo = "error") { const m = $("msgTutoria"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); }
     function limpiarMsgTutoria() { $("msgTutoria").className = "msg"; }
 
     function empezarEdicion(t) {
@@ -1026,7 +1033,7 @@
     const estadoDe = p => !p.activo ? "inactivo" : p.user_id ? "activo" : "pendiente";
     const ESTADOS = { activo: "Activo", pendiente: "Pendiente", inactivo: "Inactivo" };
     const iniciales = n => n.trim().split(/\s+/).slice(0, 2).map(x => x[0]).join("").toUpperCase();
-    function msgAdmin(texto, tipo = "error") { const m = $("msgAdmin"); m.textContent = texto; m.className = "msg show " + tipo; m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    function msgAdmin(texto, tipo = "error") { const m = $("msgAdmin"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     function limpiarMsgAdmin() { $("msgAdmin").className = "msg"; }
     function errorPersona(err) {
       const t = String(err?.message || "");
@@ -1204,7 +1211,7 @@
     // ---------- Módulos ----------
     let modulosAdmin = [], filtroModulos = "todos", ultimaLectura = new Map(), tutoriasPorModulo = new Map();
     const CAPACIDAD_MIN = 1, CAPACIDAD_MAX = 50;
-    function msgModulos(texto, tipo = "error") { const m = $("msgModulos"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function msgModulos(texto, tipo = "error") { const m = $("msgModulos"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); }
     function haceCuanto(fecha) {
       const min = Math.floor((Date.now() - new Date(fecha).getTime()) / 60000);
       if (min < 1) return "hace un momento"; if (min < 60) return `hace ${min} min`;
@@ -1291,7 +1298,7 @@
     // ---------- Materias ----------
     const POR_PAGINA = 20;
     let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", paginaMaterias = 1, editandoMateria = null, confirmandoMateria = null;
-    function msgMaterias(texto, tipo = "error") { const m = $("msgMaterias"); m.textContent = texto; m.className = "msg show " + tipo; m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    function msgMaterias(texto, tipo = "error") { const m = $("msgMaterias"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     function errorMateria(err) {
       const t = String(err?.message || "");
       if (t.includes("materias_nombre_unico") || t.includes("duplicate")) return "Ya existe una materia con ese nombre.";
@@ -1433,7 +1440,7 @@
 
     // ---------- Todas las tutorías ----------
     let tutAdmin = [], mapaTutor = new Map(), mapaMateria = new Map(), mapaModulo = new Map(), paginaTut = 1, confirmandoTut = null;
-    function msgTutAdmin(texto, tipo = "error") { const m = $("msgTutAdmin"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function msgTutAdmin(texto, tipo = "error") { const m = $("msgTutAdmin"); m.textContent = texto; m.className = "msg show " + tipo; autoOcultar(m, tipo); }
 
     function pintarTutoriasAdmin() {
       const fMod = $("fModulo").value, fDia = $("fDia").value, fTut = $("fTutor").value, q = sinTildes($("fMateria").value.trim());
