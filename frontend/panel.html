@@ -243,6 +243,19 @@
     .modulo-pie{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted);line-height:1.5}
     .lectura-ok{color:var(--g-700);font-weight:700}
     .lectura-vieja{color:var(--amber-700);font-weight:700}
+    .form-materia{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:end}
+    .form-materia .field{margin:0}
+    .materias-lista{border:1px solid var(--line);border-radius:16px;overflow:hidden}
+    .materia{display:grid;grid-template-columns:minmax(0,1fr) 110px 120px 40px;gap:12px;align-items:center;padding:9px 14px;border-top:1px solid var(--line)}
+    .materia:first-child{border-top:0}
+    .materia.inactiva .m-nombre{color:var(--muted-2);text-decoration:line-through}
+    .m-nombre{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .m-uso{font-size:12px;color:var(--muted)}
+    .materia .switch{font-size:12px}
+    .materia-edicion{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}
+    .materia-edicion input{min-height:40px;font-size:14px;padding:8px 10px}
+    .mas{display:flex;justify-content:center;margin-top:12px}
+    @media(max-width:620px){.materia{grid-template-columns:minmax(0,1fr) 40px}.materia .m-uso,.materia .switch{grid-column:1}.form-materia{grid-template-columns:1fr}}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -414,6 +427,8 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></svg>Personas</button>
           <button class="tab-admin" type="button" role="tab" id="tab-modulos" aria-controls="panelModulos" aria-selected="false" tabindex="-1">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Módulos</button>
+          <button class="tab-admin" type="button" role="tab" id="tab-materias" aria-controls="panelMaterias" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5v-15Z"/><path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5"/><path d="M8 7h8M8 11h6"/></svg>Materias</button>
         </div>
 
         <div class="tab-panel" id="panelPersonas" role="tabpanel" aria-labelledby="tab-personas">
@@ -448,6 +463,29 @@
             <div class="msg" id="msgModulos" role="alert"></div>
             <div class="barra"><div class="filtros" role="group" aria-label="Filtrar módulos" id="filtrosModulos"></div></div>
             <div class="modulos" id="listaModulos"></div>
+          </section>
+        </div>
+
+        <div class="tab-panel" id="panelMaterias" role="tabpanel" aria-labelledby="tab-materias" hidden>
+          <section class="panel-card" aria-labelledby="tAgregarMateria">
+            <h2 id="tAgregarMateria">Agregar materia</h2>
+            <p class="sub" style="margin-bottom:14px">Solo si falta en la lista. Los tutores eligen la materia de su tutoría entre las activas.</p>
+            <div class="msg" id="msgMaterias" role="alert"></div>
+            <form class="form-materia" id="formMateria" novalidate>
+              <div class="field"><label for="mNombre">Nombre de la materia</label><input type="text" id="mNombre" maxlength="120" autocomplete="off" placeholder="Física mecánica" required></div>
+              <button class="btn btn-dark" type="submit" id="btnAgregarMateria">Agregar</button>
+            </form>
+          </section>
+          <section class="panel-card" aria-labelledby="tMaterias">
+            <div class="card-head"><h2 id="tMaterias">Materias</h2><span id="totalMaterias"></span></div>
+            <div class="barra">
+              <div class="filtros" role="group" aria-label="Filtrar materias" id="filtrosMaterias"></div>
+              <label class="buscar"><span class="sr-only">Buscar materia</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <input type="search" id="buscarMateria" placeholder="Buscar materia"></label>
+            </div>
+            <div class="materias-lista" id="listaMateriasAdmin"></div>
+            <div class="mas" id="masMaterias"></div>
           </section>
         </div>
       </div>
@@ -1089,13 +1127,14 @@
       pintarPersonas();
     }
     // ---------- Pestañas del admin ----------
-    const PESTANAS = [["tab-personas", "panelPersonas"], ["tab-modulos", "panelModulos"]];
+    const PESTANAS = [["tab-personas", "panelPersonas"], ["tab-modulos", "panelModulos"], ["tab-materias", "panelMaterias"]];
     function verPestana(tabId) {
       PESTANAS.forEach(([t, panel]) => {
         const activa = t === tabId;
         $(t).setAttribute("aria-selected", String(activa)); $(t).tabIndex = activa ? 0 : -1; $(panel).hidden = !activa;
       });
       if (tabId === "tab-modulos") cargarModulosAdmin();
+      if (tabId === "tab-materias") cargarMateriasAdmin();
     }
     PESTANAS.forEach(([t], i) => {
       $(t).addEventListener("click", () => verPestana(t));
@@ -1191,6 +1230,106 @@
       tutoriasPorModulo = new Map(); (resT.data || []).forEach(t => tutoriasPorModulo.set(t.modulo_id, (tutoriasPorModulo.get(t.modulo_id) || 0) + 1));
       ultimaLectura = new Map(); (resL.data || []).forEach(r => { if (r.modulo_id && !ultimaLectura.has(r.modulo_id)) ultimaLectura.set(r.modulo_id, r.fecha_hora); });
       pintarModulosAdmin();
+    }
+
+    // ---------- Materias ----------
+    const POR_PAGINA = 30;
+    let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", mostrarMaterias = POR_PAGINA, editandoMateria = null;
+    function msgMaterias(texto, tipo = "error") { const m = $("msgMaterias"); m.textContent = texto; m.className = "msg show " + tipo; m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+    function errorMateria(err) {
+      const t = String(err?.message || "");
+      if (t.includes("materias_nombre_unico") || t.includes("duplicate")) return "Ya existe una materia con ese nombre.";
+      if (t.includes("materias_nombre_check")) return "Escribe un nombre válido (mínimo 2 letras).";
+      return traducirError(err);
+    }
+    // Primera letra en mayúscula, igual que la lista oficial.
+    const normalizarMateria = n => { const t = n.trim().replace(/\s+/g, " "); return t.charAt(0).toUpperCase() + t.slice(1); };
+
+    function pintarMateriasAdmin() {
+      const activas = materiasAdmin.filter(m => m.activa).length;
+      $("totalMaterias").textContent = `${materiasAdmin.length} materias · ${activas} activas`;
+      const cuenta = f => f === "todas" ? materiasAdmin.length : materiasAdmin.filter(m => f === "activas" ? m.activa : !m.activa).length;
+      $("filtrosMaterias").replaceChildren(...[["activas", "Activas"], ["inactivas", "Inactivas"], ["todas", "Todas"]].map(([f, txt]) => {
+        const b = el("button", "filtro", txt + " "); b.type = "button"; b.append(el("small", null, `(${cuenta(f)})`));
+        b.setAttribute("aria-pressed", String(filtroMaterias === f));
+        b.addEventListener("click", () => { filtroMaterias = f; mostrarMaterias = POR_PAGINA; pintarMateriasAdmin(); }); return b;
+      }));
+      const q = sinTildes($("buscarMateria").value.trim());
+      const lista = materiasAdmin
+        .filter(m => filtroMaterias === "todas" || (filtroMaterias === "activas" ? m.activa : !m.activa))
+        .filter(m => !q || sinTildes(m.nombre).includes(q));
+      if (!lista.length) { $("listaMateriasAdmin").replaceChildren(el("div", "vacio", q ? "Ninguna materia coincide con la búsqueda." : "No hay materias en este grupo.")); $("masMaterias").replaceChildren(); return; }
+      $("listaMateriasAdmin").replaceChildren(...lista.slice(0, mostrarMaterias).map(filaMateria));
+      const faltan = lista.length - mostrarMaterias;
+      if (faltan > 0) {
+        const b = el("button", "btn btn-light", `Mostrar más (${faltan} restantes)`); b.type = "button";
+        b.addEventListener("click", () => { mostrarMaterias += POR_PAGINA; pintarMateriasAdmin(); });
+        $("masMaterias").replaceChildren(b);
+      } else $("masMaterias").replaceChildren();
+    }
+
+    function filaMateria(m) {
+      const fila = el("div", "materia" + (m.activa ? "" : " inactiva")), uso = usoMateria.get(m.id) || 0;
+      if (editandoMateria === m.id) {
+        const f = el("form", "materia-edicion"); f.noValidate = true;
+        const i = el("input"); i.type = "text"; i.value = m.nombre; i.maxLength = 120; i.setAttribute("aria-label", "Nuevo nombre");
+        const g = el("button", "btn btn-dark btn-sm", "Guardar"); g.type = "submit";
+        const c = el("button", "btn btn-light btn-sm", "Cancelar"); c.type = "button"; c.addEventListener("click", () => { editandoMateria = null; pintarMateriasAdmin(); });
+        f.append(i, g, c);
+        f.addEventListener("submit", e => {
+          e.preventDefault();
+          const nombre = normalizarMateria(i.value);
+          if (nombre.length < 2) return msgMaterias("Escribe un nombre válido (mínimo 2 letras).");
+          conBoton(g, async () => {
+            const { data, error } = await sb.from("materias").update({ nombre }).eq("id", m.id).select("id");
+            if (error || !data?.length) return msgMaterias(error ? errorMateria(error) : "No tienes permiso para cambiar materias.");
+            m.nombre = nombre; editandoMateria = null; materiasAdmin.sort(ordenMaterias); pintarMateriasAdmin(); msgMaterias("Nombre actualizado.", "ok");
+          });
+        });
+        fila.append(f); setTimeout(() => { i.focus(); i.select(); }, 30); return fila;
+      }
+      const nombre = el("span", "m-nombre", m.nombre); nombre.title = m.nombre;
+      const usoTxt = el("span", "m-uso", uso ? `${uso} ${uso === 1 ? "tutoría" : "tutorías"}` : "Sin tutorías");
+      const sw = el("label", "switch"), chk = el("input");
+      chk.type = "checkbox"; chk.checked = m.activa; chk.setAttribute("role", "switch"); chk.setAttribute("aria-label", `${m.nombre} activa`);
+      sw.append(el("span", null, "Activa"), chk, el("span", "pista"));
+      chk.addEventListener("change", async () => {
+        const { data, error } = await sb.from("materias").update({ activa: chk.checked }).eq("id", m.id).select("id");
+        if (error || !data?.length) { chk.checked = !chk.checked; return msgMaterias(error ? errorMateria(error) : "No tienes permiso para cambiar materias."); }
+        m.activa = chk.checked; fila.classList.toggle("inactiva", !m.activa);
+        $("totalMaterias").textContent = `${materiasAdmin.length} materias · ${materiasAdmin.filter(x => x.activa).length} activas`;
+        msgMaterias(m.activa ? `"${m.nombre}" vuelve a estar disponible para los tutores.` : `"${m.nombre}" ya no aparecerá en el buscador de los tutores${uso ? "; sus tutorías actuales la conservan" : ""}.`, "ok");
+      });
+      const ed = el("button", "icon-btn"); ed.type = "button"; ed.innerHTML = ICONO_EDITAR; ed.setAttribute("aria-label", `Renombrar ${m.nombre}`);
+      ed.addEventListener("click", () => { editandoMateria = m.id; pintarMateriasAdmin(); });
+      fila.append(nombre, usoTxt, sw, ed); return fila;
+    }
+    const ordenMaterias = (a, b) => a.nombre.localeCompare(b.nombre, "es");
+
+    $("formMateria").addEventListener("submit", e => {
+      e.preventDefault();
+      const nombre = normalizarMateria($("mNombre").value);
+      if (nombre.length < 2) { $("mNombre").focus(); return msgMaterias("Escribe un nombre válido (mínimo 2 letras)."); }
+      const parecida = materiasAdmin.find(m => sinTildes(m.nombre) === sinTildes(nombre));
+      if (parecida) return msgMaterias(`Ya existe "${parecida.nombre}"${parecida.activa ? "" : " (está inactiva: actívala en la lista)"}.`);
+      conBoton($("btnAgregarMateria"), async () => {
+        const { error } = await sb.from("materias").insert({ nombre });
+        if (error) return msgMaterias(errorMateria(error));
+        $("formMateria").reset(); $("buscarMateria").value = ""; filtroMaterias = "activas";
+        await cargarMateriasAdmin(); msgMaterias(`"${nombre}" fue agregada y ya la pueden elegir los tutores.`, "ok");
+      });
+    });
+    $("buscarMateria").addEventListener("input", () => { mostrarMaterias = POR_PAGINA; pintarMateriasAdmin(); });
+
+    async function cargarMateriasAdmin() {
+      const [resM, resT] = await Promise.all([
+        sb.from("materias").select("id, nombre, activa"),
+        sb.from("tutorias").select("materia_id")
+      ]);
+      if (resM.error) { msgMaterias("No se pudieron cargar las materias. Recarga la página."); return; }
+      materiasAdmin = (resM.data || []).sort(ordenMaterias);
+      usoMateria = new Map(); (resT.data || []).forEach(t => usoMateria.set(t.materia_id, (usoMateria.get(t.materia_id) || 0) + 1));
+      pintarMateriasAdmin();
     }
 
     async function iniciarAdmin() { verPestana("tab-personas"); await cargarPersonas(); }
