@@ -213,6 +213,36 @@
       .persona .p-acc{grid-column:2;justify-content:flex-start}
       .persona-edicion{grid-template-columns:1fr}
     }
+    .tabs-admin{display:flex;gap:6px;margin:0 0 18px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:16px;overflow-x:auto}
+    .tab-admin{flex:1;min-width:110px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 14px;border:0;border-radius:11px;background:none;font-weight:800;font-size:14px;color:var(--muted);cursor:pointer}
+    .tab-admin:hover{background:var(--g-50);color:var(--g-900)}
+    .tab-admin[aria-selected=true]{background:var(--g-800);color:#fff}
+    .tab-admin svg{width:17px;height:17px}
+    .tab-panel > .panel-card + .panel-card{margin-top:20px}
+    .modulos{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+    .modulo{position:relative;padding:14px;border:1px solid var(--line);border-radius:16px;background:#fff;transition:border-color .2s,box-shadow .2s}
+    .modulo.con-camara{border-color:var(--g-600);box-shadow:inset 0 0 0 1px var(--g-600)}
+    .modulo-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+    .modulo-head strong{font-size:15px;color:var(--g-950)}
+    .guardado{font-size:11px;font-weight:700;color:var(--g-700);opacity:0;transition:opacity .3s}
+    .guardado.visible{opacity:1}
+    .capacidad{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+    .capacidad span{font-size:12px;color:var(--muted)}
+    .stepper{display:inline-flex;align-items:center;border:1px solid var(--line-2);border-radius:10px;overflow:hidden}
+    .stepper button{width:32px;height:32px;border:0;background:#fff;font-size:18px;font-weight:700;cursor:pointer;color:var(--g-900)}
+    .stepper button:hover{background:var(--g-50)}
+    .stepper button:disabled{color:var(--line-2);cursor:not-allowed}
+    .stepper output{min-width:34px;text-align:center;font-weight:800;font-variant-numeric:tabular-nums}
+    .switch{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px;font-weight:700;cursor:pointer}
+    .switch input{position:absolute;opacity:0;width:1px;height:1px}
+    .switch .pista{position:relative;width:40px;height:22px;border-radius:999px;background:#d5ddd4;transition:background .2s;flex-shrink:0}
+    .switch .pista::after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .2s}
+    .switch input:checked + .pista{background:var(--g-700)}
+    .switch input:checked + .pista::after{transform:translateX(18px)}
+    .switch input:focus-visible + .pista{outline:3px solid var(--lime);outline-offset:2px}
+    .modulo-pie{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line);font-size:12px;color:var(--muted);line-height:1.5}
+    .lectura-ok{color:var(--g-700);font-weight:700}
+    .lectura-vieja{color:var(--amber-700);font-weight:700}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -379,6 +409,14 @@
       <div id="seccionAdmin" hidden>
         <div class="admin-datos" id="adminDatos" aria-label="Resumen"></div>
 
+        <div class="tabs-admin" role="tablist" aria-label="Secciones de administración">
+          <button class="tab-admin" type="button" role="tab" id="tab-personas" aria-controls="panelPersonas" aria-selected="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M21.5 20a6.5 6.5 0 0 0-4-6"/></svg>Personas</button>
+          <button class="tab-admin" type="button" role="tab" id="tab-modulos" aria-controls="panelModulos" aria-selected="false" tabindex="-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Módulos</button>
+        </div>
+
+        <div class="tab-panel" id="panelPersonas" role="tabpanel" aria-labelledby="tab-personas">
         <section class="panel-card" aria-labelledby="tAgregar">
           <h2 id="tAgregar">Agregar persona</h2>
           <p class="sub" style="margin-bottom:14px">Podrá ingresar con su correo institucional: la primera vez recibe un código y crea su contraseña.</p>
@@ -401,6 +439,17 @@
           </div>
           <div class="personas" id="listaPersonas"></div>
         </section>
+        </div>
+
+        <div class="tab-panel" id="panelModulos" role="tabpanel" aria-labelledby="tab-modulos" hidden>
+          <section class="panel-card" aria-labelledby="tModulos">
+            <div class="card-head"><h2 id="tModulos">Módulos del CAE</h2><span id="totalModulos"></span></div>
+            <p class="sub" style="margin-bottom:14px">Ajusta las sillas de cada módulo y activa <strong>Con cámara</strong> cuando se instale su ESP32-CAM (debe enviar el origen <code>modulo-N</code>). Los cambios se guardan solos.</p>
+            <div class="msg" id="msgModulos" role="alert"></div>
+            <div class="barra"><div class="filtros" role="group" aria-label="Filtrar módulos" id="filtrosModulos"></div></div>
+            <div class="modulos" id="listaModulos"></div>
+          </section>
+        </div>
       </div>
     </main>
   </div>
@@ -1039,7 +1088,112 @@
       tutoriasPorTutor = new Map(); (resT.data || []).forEach(t => tutoriasPorTutor.set(t.tutor_id, (tutoriasPorTutor.get(t.tutor_id) || 0) + 1));
       pintarPersonas();
     }
-    async function iniciarAdmin() { await cargarPersonas(); }
+    // ---------- Pestañas del admin ----------
+    const PESTANAS = [["tab-personas", "panelPersonas"], ["tab-modulos", "panelModulos"]];
+    function verPestana(tabId) {
+      PESTANAS.forEach(([t, panel]) => {
+        const activa = t === tabId;
+        $(t).setAttribute("aria-selected", String(activa)); $(t).tabIndex = activa ? 0 : -1; $(panel).hidden = !activa;
+      });
+      if (tabId === "tab-modulos") cargarModulosAdmin();
+    }
+    PESTANAS.forEach(([t], i) => {
+      $(t).addEventListener("click", () => verPestana(t));
+      $(t).addEventListener("keydown", e => {   // flechas para moverse entre pestañas
+        if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+        const sig = PESTANAS[(i + (e.key === "ArrowRight" ? 1 : PESTANAS.length - 1)) % PESTANAS.length][0];
+        $(sig).focus(); verPestana(sig);
+      });
+    });
+
+    // ---------- Módulos ----------
+    let modulosAdmin = [], filtroModulos = "todos", ultimaLectura = new Map(), tutoriasPorModulo = new Map();
+    const CAPACIDAD_MIN = 1, CAPACIDAD_MAX = 50;
+    function msgModulos(texto, tipo = "error") { const m = $("msgModulos"); m.textContent = texto; m.className = "msg show " + tipo; }
+    function haceCuanto(fecha) {
+      const min = Math.floor((Date.now() - new Date(fecha).getTime()) / 60000);
+      if (min < 1) return "hace un momento"; if (min < 60) return `hace ${min} min`;
+      const h = Math.floor(min / 60); if (h < 24) return `hace ${h} h`;
+      const d = Math.floor(h / 24); return `hace ${d} ${d === 1 ? "día" : "días"}`;
+    }
+
+    function pintarModulosAdmin() {
+      const conCam = modulosAdmin.filter(m => m.activo).length;
+      $("totalModulos").textContent = `${modulosAdmin.length} módulos · ${conCam} con cámara`;
+      const cuenta = f => f === "todos" ? modulosAdmin.length : modulosAdmin.filter(m => f === "con" ? m.activo : !m.activo).length;
+      $("filtrosModulos").replaceChildren(...[["todos", "Todos"], ["con", "Con cámara"], ["sin", "Sin cámara"]].map(([f, txt]) => {
+        const b = el("button", "filtro", txt + " "); b.type = "button"; b.append(el("small", null, `(${cuenta(f)})`));
+        b.setAttribute("aria-pressed", String(filtroModulos === f)); b.addEventListener("click", () => { filtroModulos = f; pintarModulosAdmin(); }); return b;
+      }));
+      const lista = modulosAdmin.filter(m => filtroModulos === "todos" || (filtroModulos === "con" ? m.activo : !m.activo));
+      if (!lista.length) { $("listaModulos").replaceChildren(el("div", "vacio", "No hay módulos en este grupo.")); return; }
+      $("listaModulos").replaceChildren(...lista.map(tarjetaModulo));
+    }
+
+    function tarjetaModulo(m) {
+      const card = el("div", "modulo" + (m.activo ? " con-camara" : ""));
+      const head = el("div", "modulo-head"), ok = el("span", "guardado", "✓ Guardado");
+      ok.setAttribute("aria-live", "polite"); head.append(el("strong", null, m.nombre), ok);
+
+      // Capacidad con botones − y +
+      const cap = el("div", "capacidad"); cap.append(el("span", null, "Sillas"));
+      const st = el("div", "stepper"); st.setAttribute("role", "group"); st.setAttribute("aria-label", `Sillas de ${m.nombre}`);
+      const menos = el("button", null, "−"), mas = el("button", null, "+"), out = el("output", null, String(m.capacidad));
+      menos.type = mas.type = "button"; menos.setAttribute("aria-label", "Quitar una silla"); mas.setAttribute("aria-label", "Agregar una silla");
+      const refrescar = () => { out.textContent = String(m.capacidad); menos.disabled = m.capacidad <= CAPACIDAD_MIN; mas.disabled = m.capacidad >= CAPACIDAD_MAX; };
+      let espera = null;
+      const cambiar = delta => {
+        m.capacidad = Math.min(CAPACIDAD_MAX, Math.max(CAPACIDAD_MIN, m.capacidad + delta)); refrescar();
+        clearTimeout(espera); espera = setTimeout(() => guardarModulo(m, { capacidad: m.capacidad }, ok), 600); // espera a que termine de hacer clic
+      };
+      menos.addEventListener("click", () => cambiar(-1)); mas.addEventListener("click", () => cambiar(1));
+      st.append(menos, out, mas); cap.append(st); refrescar();
+
+      // Interruptor "Con cámara"
+      const sw = el("label", "switch"), chk = el("input");
+      chk.type = "checkbox"; chk.checked = m.activo; chk.setAttribute("role", "switch");
+      sw.append(el("span", null, "Con cámara"), chk, el("span", "pista"));
+      chk.addEventListener("change", async () => {
+        const antes = m.activo; m.activo = chk.checked;
+        const bien = await guardarModulo(m, { activo: m.activo }, ok);
+        if (!bien) { m.activo = antes; chk.checked = antes; return; }
+        card.classList.toggle("con-camara", m.activo);
+        $("totalModulos").textContent = `${modulosAdmin.length} módulos · ${modulosAdmin.filter(x => x.activo).length} con cámara`;
+      });
+
+      // Pie con datos
+      const pie = el("div", "modulo-pie"), nT = tutoriasPorModulo.get(m.id) || 0;
+      pie.append(document.createTextNode(`${nT} ${nT === 1 ? "tutoría registrada" : "tutorías registradas"}`), el("br"));
+      const lec = ultimaLectura.get(m.id);
+      if (lec) {
+        const vieja = Date.now() - new Date(lec).getTime() > 12 * 60000;
+        pie.append(document.createTextNode("Última lectura: "), el("span", vieja ? "lectura-vieja" : "lectura-ok", haceCuanto(lec)));
+      } else pie.append(document.createTextNode(m.activo ? "Sin lecturas todavía" : "Sin cámara instalada"));
+
+      card.append(head, cap, sw, pie); return card;
+    }
+
+    async function guardarModulo(m, cambios, aviso) {
+      const { data, error } = await sb.from("modulos").update(cambios).eq("id", m.id).select("id");
+      if (error || !data?.length) { msgModulos(error ? traducirError(error) : "No tienes permiso para cambiar módulos."); return false; }
+      aviso.classList.add("visible"); clearTimeout(aviso._t); aviso._t = setTimeout(() => aviso.classList.remove("visible"), 1800);
+      return true;
+    }
+
+    async function cargarModulosAdmin() {
+      const [resM, resT, resL] = await Promise.all([
+        sb.from("modulos").select("id, nombre, capacidad, activo").order("id"),
+        sb.from("tutorias").select("modulo_id"),
+        sb.from("registros_ocupacion").select("modulo_id, fecha_hora").order("fecha_hora", { ascending: false }).limit(1000)
+      ]);
+      if (resM.error) { msgModulos("No se pudieron cargar los módulos. Recarga la página."); return; }
+      modulosAdmin = resM.data || [];
+      tutoriasPorModulo = new Map(); (resT.data || []).forEach(t => tutoriasPorModulo.set(t.modulo_id, (tutoriasPorModulo.get(t.modulo_id) || 0) + 1));
+      ultimaLectura = new Map(); (resL.data || []).forEach(r => { if (r.modulo_id && !ultimaLectura.has(r.modulo_id)) ultimaLectura.set(r.modulo_id, r.fecha_hora); });
+      pintarModulosAdmin();
+    }
+
+    async function iniciarAdmin() { verPestana("tab-personas"); await cargarPersonas(); }
 
     // ---------- Inicio ----------
     (async () => {
