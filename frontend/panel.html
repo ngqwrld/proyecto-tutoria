@@ -118,6 +118,16 @@
     .duracion input:focus-visible + span{outline:3px solid var(--lime);outline-offset:2px}
     .resumen{margin:4px 0 0;padding:10px 12px;border-radius:12px;background:var(--g-50);font-weight:700;color:var(--g-900)}
     .resumen.mal{background:var(--red-100);color:var(--red-700)}
+    .combo{position:relative}
+    .combo input{width:100%;min-height:46px;padding:10px 38px 10px 14px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-size:15px}
+    .combo-icono{position:absolute;right:12px;top:14px;width:18px;height:18px;color:var(--muted-2);pointer-events:none}
+    .combo-lista{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);max-height:260px;overflow-y:auto;margin:0;padding:6px;list-style:none;background:#fff;border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow)}
+    .combo-lista li{padding:9px 10px;border-radius:9px;cursor:pointer}
+    .combo-lista li[aria-selected=true]{background:var(--g-100);color:var(--g-900)}
+    .combo-lista li mark{background:none;color:var(--g-700);font-weight:800}
+    .combo-lista .sin-resultados{color:var(--muted);cursor:default}
+    .combo.elegida input{border-color:var(--g-600);background:var(--g-50);font-weight:700}
+    .materia-txt{font-weight:700;color:var(--g-900)}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
   </style>
@@ -231,6 +241,15 @@
           <p class="sub" id="formSub">Se repite cada semana, de lunes a sábado entre 7:00 a.m. y 9:00 p.m.</p>
           <div class="msg" id="msgTutoria" role="alert"></div>
           <form id="formTutoria" novalidate>
+            <div class="field">
+              <label for="tMateria" id="tMateriaLabel">Materia</label>
+              <div class="combo" id="comboMateria">
+                <input type="text" id="tMateria" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="listaMaterias"
+                       autocomplete="off" placeholder="Escribe para buscar, ej.: cálculo" required>
+                <svg class="combo-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                <ul class="combo-lista" id="listaMaterias" role="listbox" aria-labelledby="tMateriaLabel" hidden></ul>
+              </div>
+            </div>
             <div class="field">
               <label for="tModulo">Módulo</label>
               <select id="tModulo" required></select>
@@ -420,12 +439,16 @@
     // en el formulario y en la regla duracion_en_bloques_de_45 de Supabase.
     const BLOQUES = { 45: "Sencilla", 90: "Doble", 135: "Triple", 180: "Cuádruple" };
     const nombreDuracion = min => BLOQUES[min] || `${min} min`;
-    let tutorias = [], modulos = [], editandoId = null, confirmandoId = null, relojTutor = null;
+    let tutorias = [], modulos = [], materias = [], editandoId = null, confirmandoId = null, relojTutor = null;
+    let materiaElegida = null; // id de la materia seleccionada en el buscador
 
     const aMin = h => { const [a, b] = String(h).split(":").map(Number); return a * 60 + b; };
     const aHora = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
     function hora12(m) { const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); const s = h >= 12 ? "p. m." : "a. m."; return `${((h + 11) % 12) + 1}:${mm} ${s}`; }
     const nombreModulo = id => (modulos.find(m => m.id === id) || {}).nombre || `Módulo ${id}`;
+    const nombreMateria = id => (materias.find(m => m.id === id) || {}).nombre || "Materia";
+    // Para buscar sin importar mayúsculas ni tildes: "calculo" encuentra "Cálculo".
+    const sinTildes = t => String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 
     // Hora actual en Colombia (la página puede abrirse desde cualquier zona horaria).
     function ahoraBogota() {
@@ -466,7 +489,7 @@
         const c = textoCuando(p), fila = el("div", "proxima" + (p.enCurso ? " en-curso" : ""));
         const cuando = el("div", "proxima-cuando"); cuando.append(el("strong", null, c.titulo), el("small", null, c.detalle));
         const info = el("div", "proxima-info");
-        info.append(el("strong", null, `${hora12(p.ini)} – ${hora12(p.fin)}`), el("small", null, `${nombreModulo(t.modulo_id)} · ${nombreDuracion(t.duracion_min)}`));
+        info.append(el("strong", null, nombreMateria(t.materia_id)), el("small", null, `${hora12(p.ini)} – ${hora12(p.fin)} · ${nombreModulo(t.modulo_id)} · ${nombreDuracion(t.duracion_min)}`));
         fila.append(cuando, info); return fila;
       }));
     }
@@ -483,7 +506,7 @@
         delDia.forEach(t => {
           const fila = el("div", "fila" + (t.id === editandoId ? " editando" : ""));
           const horaTxt = el("span", "fila-hora", `${hora12(aMin(t.hora_inicio))} – ${hora12(aMin(t.hora_fin))}`);
-          const mod = el("span", "fila-mod", nombreModulo(t.modulo_id)); mod.append(el("span", "chip", nombreDuracion(t.duracion_min)));
+          const mod = el("span", "fila-mod"); mod.append(el("span", "materia-txt", nombreMateria(t.materia_id)), document.createTextNode(` · ${nombreModulo(t.modulo_id)}`), el("span", "chip", nombreDuracion(t.duracion_min)));
           fila.append(horaTxt, mod);
           if (confirmandoId === t.id) {
             const conf = el("span", "confirmar", "¿Eliminar?");
@@ -517,15 +540,67 @@
     ["tHora", "tDia"].forEach(id => $(id).addEventListener("input", actualizarResumen));
     document.querySelectorAll('input[name="tDur"]').forEach(r => r.addEventListener("change", actualizarResumen));
 
+    // ---------- Buscador de materias (combobox accesible) ----------
+    let opcionesVisibles = [], indiceActivo = -1;
+    function resaltar(nombre, consulta) {
+      const li = document.createDocumentFragment();
+      const i = consulta ? sinTildes(nombre).indexOf(sinTildes(consulta)) : -1;
+      if (i < 0) { li.append(nombre); return li; }
+      const m = document.createElement("mark"); m.textContent = nombre.slice(i, i + consulta.length);
+      li.append(nombre.slice(0, i), m, nombre.slice(i + consulta.length)); return li;
+    }
+    function abrirLista(consulta) {
+      const lista = $("listaMaterias"), q = sinTildes(consulta.trim());
+      const activas = materias.filter(m => m.activa);
+      opcionesVisibles = (q ? activas.filter(m => sinTildes(m.nombre).includes(q)) : activas).slice(0, 50);
+      indiceActivo = opcionesVisibles.length ? 0 : -1;
+      if (!opcionesVisibles.length) {
+        lista.replaceChildren(el("li", "sin-resultados", "No hay materias con ese nombre. Si falta alguna, pídela al administrador."));
+      } else {
+        lista.replaceChildren(...opcionesVisibles.map((m, i) => {
+          const li = el("li"); li.id = "materia-op-" + m.id; li.setAttribute("role", "option");
+          li.setAttribute("aria-selected", String(i === indiceActivo)); li.append(resaltar(m.nombre, consulta.trim()));
+          li.addEventListener("mousedown", e => { e.preventDefault(); elegirMateria(m); });
+          return li;
+        }));
+      }
+      lista.hidden = false; $("tMateria").setAttribute("aria-expanded", "true"); marcarActiva();
+    }
+    function cerrarLista() { $("listaMaterias").hidden = true; $("tMateria").setAttribute("aria-expanded", "false"); $("tMateria").removeAttribute("aria-activedescendant"); }
+    function marcarActiva() {
+      [...$("listaMaterias").children].forEach((li, i) => li.setAttribute("aria-selected", String(i === indiceActivo)));
+      const activa = opcionesVisibles[indiceActivo];
+      if (activa) { $("tMateria").setAttribute("aria-activedescendant", "materia-op-" + activa.id); document.getElementById("materia-op-" + activa.id)?.scrollIntoView({ block: "nearest" }); }
+    }
+    function elegirMateria(m) {
+      materiaElegida = m ? m.id : null; $("tMateria").value = m ? m.nombre : "";
+      $("comboMateria").classList.toggle("elegida", !!m); cerrarLista();
+    }
+    $("tMateria").addEventListener("input", e => { materiaElegida = null; $("comboMateria").classList.remove("elegida"); abrirLista(e.target.value); });
+    $("tMateria").addEventListener("focus", e => { if (!materiaElegida) abrirLista(e.target.value); });
+    $("tMateria").addEventListener("blur", () => {
+      setTimeout(cerrarLista, 120);
+      // Si escribió el nombre exacto, se toma como elegido.
+      if (!materiaElegida) { const exacta = materias.find(m => m.activa && sinTildes(m.nombre) === sinTildes($("tMateria").value.trim())); if (exacta) elegirMateria(exacta); }
+    });
+    $("tMateria").addEventListener("keydown", e => {
+      const abierta = !$("listaMaterias").hidden;
+      if (e.key === "ArrowDown") { e.preventDefault(); if (!abierta) return abrirLista(e.target.value); if (opcionesVisibles.length) { indiceActivo = (indiceActivo + 1) % opcionesVisibles.length; marcarActiva(); } }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (abierta && opcionesVisibles.length) { indiceActivo = (indiceActivo - 1 + opcionesVisibles.length) % opcionesVisibles.length; marcarActiva(); } }
+      else if (e.key === "Enter" && abierta) { e.preventDefault(); if (opcionesVisibles[indiceActivo]) elegirMateria(opcionesVisibles[indiceActivo]); }
+      else if (e.key === "Escape" && abierta) { e.preventDefault(); cerrarLista(); }
+    });
+
     function msgTutoria(texto, tipo = "error") { const m = $("msgTutoria"); m.textContent = texto; m.className = "msg show " + tipo; }
     function limpiarMsgTutoria() { $("msgTutoria").className = "msg"; }
 
     function empezarEdicion(t) {
       editandoId = t.id; confirmandoId = null; limpiarMsgTutoria();
+      elegirMateria(materias.find(m => m.id === t.materia_id) || null);
       $("tModulo").value = String(t.modulo_id); $("tDia").value = String(t.dia_semana); $("tHora").value = t.hora_inicio.slice(0, 5);
       document.querySelector(`input[name="tDur"][value="${t.duracion_min}"]`).checked = true;
       $("tForm").textContent = "Editar tutoría"; $("btnGuardarTutoria").textContent = "Guardar cambios"; $("btnCancelarEdicion").hidden = false;
-      actualizarResumen(); pintarSemana(); $("tModulo").focus();
+      actualizarResumen(); pintarSemana(); $("tMateria").focus(); cerrarLista();
     }
     function terminarEdicion() {
       editandoId = null;
@@ -556,8 +631,9 @@
 
     $("formTutoria").addEventListener("submit", e => {
       e.preventDefault(); limpiarMsgTutoria();
+      if (!materiaElegida) { $("tMateria").focus(); return msgTutoria("Elige la materia de la lista."); }
       if (!actualizarResumen()) return msgTutoria($("tResumen").textContent);
-      const datos = { modulo_id: Number($("tModulo").value), dia_semana: Number($("tDia").value), hora_inicio: $("tHora").value, duracion_min: duracionElegida() };
+      const datos = { materia_id: materiaElegida, modulo_id: Number($("tModulo").value), dia_semana: Number($("tDia").value), hora_inicio: $("tHora").value, duracion_min: duracionElegida() };
       conBoton($("btnGuardarTutoria"), async () => {
         const consulta = editandoId
           ? sb.from("tutorias").update(datos).eq("id", editandoId).select("id")
@@ -582,15 +658,18 @@
 
     async function cargarTutorias() {
       const { data, error } = await sb.from("tutorias")
-        .select("id, modulo_id, dia_semana, hora_inicio, duracion_min, hora_fin")
+        .select("id, materia_id, modulo_id, dia_semana, hora_inicio, duracion_min, hora_fin")
         .eq("tutor_id", perfil.id);
       if (error) { msgTutoria("No se pudieron cargar tus tutorías. Recarga la página."); return; }
       tutorias = data || []; pintarTodo();
     }
 
     async function iniciarTutor() {
-      const { data } = await sb.from("modulos").select("id, nombre").order("id");
-      modulos = data || [];
+      const [resMod, resMat] = await Promise.all([
+        sb.from("modulos").select("id, nombre").order("id"),
+        sb.from("materias").select("id, nombre, activa").order("nombre")
+      ]);
+      modulos = resMod.data || []; materias = resMat.data || [];
       $("tModulo").replaceChildren(...modulos.map(m => { const o = el("option", null, m.nombre); o.value = String(m.id); return o; }));
       actualizarResumen();
       await cargarTutorias();
