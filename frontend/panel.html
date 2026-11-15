@@ -254,7 +254,16 @@
     .materia .switch{font-size:12px}
     .materia-edicion{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center}
     .materia-edicion input{min-height:40px;font-size:14px;padding:8px 10px}
-    .mas{display:flex;justify-content:center;margin-top:12px}
+    .paginacion{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px}
+    .paginacion:empty{display:none}
+    .pag-info{font-size:13px;color:var(--muted)}
+    .pag-botones{display:flex;align-items:center;gap:4px;flex-wrap:wrap}
+    .pag{min-width:36px;height:36px;padding:0 10px;border:1px solid var(--line-2);border-radius:10px;background:#fff;font-weight:700;font-size:13px;cursor:pointer;color:var(--g-900)}
+    .pag:hover:not(:disabled){background:var(--g-50)}
+    .pag[aria-current=page]{background:var(--g-800);border-color:var(--g-800);color:#fff}
+    .pag:disabled{color:var(--line-2);cursor:not-allowed}
+    .pag-puntos{padding:0 4px;color:var(--muted-2)}
+    @media(max-width:520px){.pag-txt{display:none}.paginacion{justify-content:center}.pag-info{width:100%;text-align:center}}
     @media(max-width:620px){.materia{grid-template-columns:minmax(0,1fr) 40px}.materia .m-uso,.materia .switch{grid-column:1}.form-materia{grid-template-columns:1fr}}
     .loading{min-height:100vh;display:grid;place-items:center;color:var(--muted)}
     .spin{animation:spin .85s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
@@ -485,7 +494,7 @@
                 <input type="search" id="buscarMateria" placeholder="Buscar materia"></label>
             </div>
             <div class="materias-lista" id="listaMateriasAdmin"></div>
-            <div class="mas" id="masMaterias"></div>
+            <nav class="paginacion" id="masMaterias" aria-label="Páginas de materias"></nav>
           </section>
         </div>
       </div>
@@ -1233,8 +1242,8 @@
     }
 
     // ---------- Materias ----------
-    const POR_PAGINA = 30;
-    let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", mostrarMaterias = POR_PAGINA, editandoMateria = null;
+    const POR_PAGINA = 20;
+    let materiasAdmin = [], usoMateria = new Map(), filtroMaterias = "activas", paginaMaterias = 1, editandoMateria = null;
     function msgMaterias(texto, tipo = "error") { const m = $("msgMaterias"); m.textContent = texto; m.className = "msg show " + tipo; m.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
     function errorMateria(err) {
       const t = String(err?.message || "");
@@ -1252,20 +1261,42 @@
       $("filtrosMaterias").replaceChildren(...[["activas", "Activas"], ["inactivas", "Inactivas"], ["todas", "Todas"]].map(([f, txt]) => {
         const b = el("button", "filtro", txt + " "); b.type = "button"; b.append(el("small", null, `(${cuenta(f)})`));
         b.setAttribute("aria-pressed", String(filtroMaterias === f));
-        b.addEventListener("click", () => { filtroMaterias = f; mostrarMaterias = POR_PAGINA; pintarMateriasAdmin(); }); return b;
+        b.addEventListener("click", () => { filtroMaterias = f; paginaMaterias = 1; pintarMateriasAdmin(); }); return b;
       }));
       const q = sinTildes($("buscarMateria").value.trim());
       const lista = materiasAdmin
         .filter(m => filtroMaterias === "todas" || (filtroMaterias === "activas" ? m.activa : !m.activa))
         .filter(m => !q || sinTildes(m.nombre).includes(q));
       if (!lista.length) { $("listaMateriasAdmin").replaceChildren(el("div", "vacio", q ? "Ninguna materia coincide con la búsqueda." : "No hay materias en este grupo.")); $("masMaterias").replaceChildren(); return; }
-      $("listaMateriasAdmin").replaceChildren(...lista.slice(0, mostrarMaterias).map(filaMateria));
-      const faltan = lista.length - mostrarMaterias;
-      if (faltan > 0) {
-        const b = el("button", "btn btn-light", `Mostrar más (${faltan} restantes)`); b.type = "button";
-        b.addEventListener("click", () => { mostrarMaterias += POR_PAGINA; pintarMateriasAdmin(); });
-        $("masMaterias").replaceChildren(b);
-      } else $("masMaterias").replaceChildren();
+      const paginas = Math.max(1, Math.ceil(lista.length / POR_PAGINA));
+      paginaMaterias = Math.min(Math.max(1, paginaMaterias), paginas);
+      const desde = (paginaMaterias - 1) * POR_PAGINA;
+      $("listaMateriasAdmin").replaceChildren(...lista.slice(desde, desde + POR_PAGINA).map(filaMateria));
+      pintarPaginacion($("masMaterias"), paginaMaterias, paginas, lista.length, desde, n => { paginaMaterias = n; editandoMateria = null; pintarMateriasAdmin(); $("tMaterias").scrollIntoView({ block: "start", behavior: "smooth" }); });
+    }
+
+    // Paginación numerada: « Anterior 1 2 3 … 7 Siguiente »
+    function pintarPaginacion(cont, actual, total, cantidad, desde, ir) {
+      if (total <= 1) { cont.replaceChildren(); return; }
+      const info = el("span", "pag-info", `Mostrando ${desde + 1}–${Math.min(desde + POR_PAGINA, cantidad)} de ${cantidad}`);
+      const botones = el("div", "pag-botones");
+      const boton = (txt, n, etiqueta) => {
+        const b = el("button", "pag", txt); b.type = "button"; b.setAttribute("aria-label", etiqueta || `Página ${n}`);
+        if (n === actual && !etiqueta) b.setAttribute("aria-current", "page");
+        if (n < 1 || n > total) b.disabled = true; else b.addEventListener("click", () => ir(n));
+        return b;
+      };
+      const flecha = (b, antes, txt, despues) => { b.textContent = ""; b.append(antes, el("span", "pag-txt", txt), despues); return b; };
+      botones.append(flecha(boton("", actual - 1, "Página anterior"), "‹ ", "Anterior", ""));
+      // Siempre se ven la primera, la última y las vecinas de la actual.
+      const ver = new Set([1, total, actual - 1, actual, actual + 1].filter(n => n >= 1 && n <= total));
+      let anterior = 0;
+      [...ver].sort((a, b) => a - b).forEach(n => {
+        if (n - anterior > 1) botones.append(el("span", "pag-puntos", "…"));
+        botones.append(boton(String(n), n)); anterior = n;
+      });
+      botones.append(flecha(boton("", actual + 1, "Página siguiente"), "", "Siguiente", " ›"));
+      cont.replaceChildren(info, botones);
     }
 
     function filaMateria(m) {
@@ -1319,7 +1350,7 @@
         await cargarMateriasAdmin(); msgMaterias(`"${nombre}" fue agregada y ya la pueden elegir los tutores.`, "ok");
       });
     });
-    $("buscarMateria").addEventListener("input", () => { mostrarMaterias = POR_PAGINA; pintarMateriasAdmin(); });
+    $("buscarMateria").addEventListener("input", () => { paginaMaterias = 1; pintarMateriasAdmin(); });
 
     async function cargarMateriasAdmin() {
       const [resM, resT] = await Promise.all([
