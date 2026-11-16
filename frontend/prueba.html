@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <title>Modo de prueba · Precisión de la detección</title>
+  <link rel="icon" href="/assets/logo-uts.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+  <style>
+    :root{
+      --g-950:#0a2b18;--g-900:#0f3a22;--g-800:#16502e;--g-700:#1d6a3b;--g-600:#27854a;--g-100:#e4f2e6;--g-50:#f3f9f3;
+      --bg:#f2f6f2;--line:#e0e8df;--line-2:#ccdacb;--text:#13251a;--muted:#5f7064;
+      --ok:#1d6a3b;--mal:#b3261e;--mal-bg:#fdecea;--aviso:#8a5a00;--aviso-bg:#fff4dc;
+      --font:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;color:var(--text);font:15px/1.5 var(--font);background:var(--bg);-webkit-font-smoothing:antialiased}
+    button,input,select{font:inherit;color:inherit}
+    .wrap{max-width:560px;margin:0 auto;padding:16px 14px 40px}
+    header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px}
+    header h1{margin:0;font-size:18px;line-height:1.2;color:var(--g-950)}
+    header p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+    .chip{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;background:var(--aviso-bg);color:var(--aviso);padding:4px 9px;border-radius:999px;white-space:nowrap}
+    .card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+    .card h2{margin:0 0 10px;font-size:14px;color:var(--g-900)}
+    label{display:block;font-weight:700;font-size:13px;margin:0 0 6px}
+    select,input[type=text]{width:100%;min-height:46px;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;background:#fff}
+    .fila{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .seg{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+    .seg button{min-height:46px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-weight:700;cursor:pointer}
+    .seg button[aria-pressed=true]{background:var(--g-800);border-color:var(--g-800);color:#fff}
+    .lectura{display:flex;align-items:center;gap:16px}
+    .grande{font-size:56px;font-weight:800;line-height:1;color:var(--g-900);min-width:70px;text-align:center}
+    .lectura small{display:block;color:var(--muted);font-size:13px}
+    .estado{margin-top:10px;font-size:13px;font-weight:700;padding:8px 10px;border-radius:10px;background:var(--g-50);color:var(--g-800)}
+    .estado.espera{background:#f4f6f4;color:var(--muted)}
+    .estado.vieja{background:var(--aviso-bg);color:var(--aviso)}
+    .nums{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+    .nums button{min-height:52px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-size:20px;font-weight:800;cursor:pointer}
+    .nums button[aria-pressed=true]{background:var(--g-800);border-color:var(--g-800);color:#fff}
+    .mas{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px}
+    .mas button{width:46px;height:46px;border-radius:12px;border:1px solid var(--line-2);background:#fff;font-size:22px;font-weight:800;cursor:pointer}
+    .mas output{font-size:15px;font-weight:700;color:var(--muted)}
+    .guardar{width:100%;min-height:54px;margin-top:12px;border:0;border-radius:14px;background:var(--g-800);color:#fff;font-weight:800;font-size:16px;cursor:pointer}
+    .guardar:disabled{background:#b9c7bc;cursor:not-allowed}
+    .msg{display:none;margin-top:10px;padding:9px 11px;border-radius:10px;font-size:13.5px;font-weight:600}
+    .msg.show{display:block}.msg.ok{background:var(--g-100);color:var(--g-800)}.msg.error{background:var(--mal-bg);color:var(--mal)}
+    .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+    .kpi{border:1px solid var(--line);border-radius:12px;padding:10px}
+    .kpi b{display:block;font-size:22px;line-height:1.1;color:var(--g-900)}
+    .kpi span{font-size:11.5px;color:var(--muted);font-weight:600}
+    table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+    th,td{padding:7px 6px;border-bottom:1px solid var(--line);text-align:center}
+    #ultimas td:first-child{white-space:nowrap}
+    th{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+    td.bien{color:var(--ok);font-weight:800}td.malo{color:var(--mal);font-weight:800}
+    .borrar{border:0;background:none;color:var(--mal);font-weight:700;cursor:pointer;font-size:12.5px}
+    .acciones{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+    .btn{min-height:42px;padding:8px 14px;border:1px solid var(--line-2);border-radius:12px;background:#fff;font-weight:700;cursor:pointer;text-decoration:none;color:var(--g-900);display:inline-flex;align-items:center}
+    .bloqueo{text-align:center;padding:30px 18px}
+    .bloqueo p{color:var(--muted)}
+    .nota-ayuda{font-size:12.5px;color:var(--muted);margin:6px 0 0}
+    [hidden]{display:none!important}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div><h1>Modo de prueba</h1><p>Precisión de la detección: conteo real contra detectado</p></div>
+      <span class="chip">Solo pruebas</span>
+    </header>
+
+    <div class="card bloqueo" id="sinAcceso" hidden>
+      <h2 id="sinAccesoTitulo">Inicia sesión como administrador</h2>
+      <p id="sinAccesoTexto">Esta página es solo para el administrador. Ingresa primero en el panel y vuelve aquí.</p>
+      <a class="btn" href="/panel">Ir al panel</a>
+    </div>
+
+    <main id="app" hidden>
+      <section class="card">
+        <h2>1. Condiciones de la prueba</h2>
+        <div class="fila">
+          <div><label for="modulo">Módulo</label><select id="modulo"></select></div>
+          <div><label>Luz del techo</label>
+            <div class="seg" role="group" aria-label="Luz del techo">
+              <button type="button" data-luz="encendida" aria-pressed="true">Prendida</button>
+              <button type="button" data-luz="apagada" aria-pressed="false">Apagada</button>
+            </div></div>
+        </div>
+        <div style="margin-top:10px"><label for="nota">Nota del caso (opcional)</label>
+          <input type="text" id="nota" maxlength="200" placeholder="Ej.: dos personas de espaldas, maleta en una silla">
+          <p class="nota-ayuda">La nota se guarda con cada lectura hasta que la cambies.</p></div>
+      </section>
+
+      <section class="card">
+        <h2>2. Lo que detectó la cámara</h2>
+        <div class="lectura">
+          <div class="grande" id="detectadas">—</div>
+          <div><b>personas detectadas</b><small id="lecturaHora">Esperando la primera lectura…</small></div>
+        </div>
+        <div class="estado espera" id="estado">Esperando una lectura de la cámara.</div>
+      </section>
+
+      <section class="card">
+        <h2>3. ¿Cuántas personas hay de verdad?</h2>
+        <div class="nums" id="nums"></div>
+        <div class="mas"><button type="button" id="menos" aria-label="Una menos">−</button><output id="realTxt">Toca un número</output><button type="button" id="masUno" aria-label="Una más">+</button></div>
+        <button class="guardar" id="guardar" type="button" disabled>Guardar comparación</button>
+        <div class="msg" id="msg" role="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>Resultados de las pruebas</h2>
+        <div class="kpis" id="kpis"></div>
+        <table aria-label="Resultados por condición de luz"><thead><tr><th>Luz</th><th>Lecturas</th><th>Acierto</th><th>Error medio</th></tr></thead><tbody id="porLuz"></tbody></table>
+        <h2 style="margin-top:16px">Últimas comparaciones</h2>
+        <table aria-label="Últimas comparaciones"><thead><tr><th>Hora</th><th>Luz</th><th>Detectó</th><th>Real</th><th></th></tr></thead><tbody id="ultimas"></tbody></table>
+        <div class="acciones"><button class="btn" type="button" id="csv">Descargar CSV</button><a class="btn" href="/panel">Volver al panel</a></div>
+      </section>
+    </main>
+  </div>
+
+<script>
+  const SUPABASE_URL = "https://prxwwzgoklwjdciwuvdd.supabase.co";
+  const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_otBd9oTl_hiOKmfmSsGx0Q_lv44OXem";
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+    auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false }
+  });
+  const $ = id => document.getElementById(id);
+  const VIEJA_SEG = 90;           // una lectura con más de 90 s ya no corresponde a lo que se ve
+  let luz = "encendida", real = null, lectura = null, registradas = new Set(), pruebas = [], canal = null;
+
+  function msg(t, tipo) { const m = $("msg"); m.textContent = t; m.className = "msg show " + tipo; clearTimeout(msg.t); msg.t = setTimeout(() => m.className = "msg", 4000); }
+  const hora = iso => new Date(iso).toLocaleTimeString("es-CO", { timeZone: "America/Bogota", hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+  async function iniciar() {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) { $("sinAcceso").hidden = false; return; }
+    const { data: perfil } = await sb.from("perfiles").select("rol, activo").eq("user_id", user.id).maybeSingle();
+    if (!perfil || perfil.rol !== "admin" || !perfil.activo) {
+      $("sinAccesoTitulo").textContent = "Esta página es solo para el administrador";
+      $("sinAccesoTexto").textContent = "Tu cuenta no tiene permiso para registrar pruebas.";
+      $("sinAcceso").hidden = false; return;
+    }
+    $("app").hidden = false;
+    const { data: mods } = await sb.from("modulos").select("id, nombre, activo").order("id");
+    (mods || []).filter(m => m.activo).forEach(m => $("modulo").append(new Option(m.nombre, m.id)));
+    if (!$("modulo").options.length) $("modulo").append(new Option("No hay módulos con cámara", ""));
+    for (let n = 0; n <= 9; n++) { const b = document.createElement("button"); b.type = "button"; b.textContent = n; b.dataset.n = n; b.setAttribute("aria-pressed", "false"); b.onclick = () => elegir(n); $("nums").append(b); }
+    await cargarPruebas();
+    await cambiarModulo();
+    setInterval(pintarLectura, 1000);
+    setInterval(ultimaLectura, 15000);     // respaldo si el tiempo real se cae
+  }
+
+  function elegir(n) {
+    real = Math.max(0, Math.min(50, n));
+    document.querySelectorAll("#nums button").forEach(b => b.setAttribute("aria-pressed", String(Number(b.dataset.n) === real)));
+    $("realTxt").textContent = real + (real === 1 ? " persona" : " personas");
+    pintarLectura();
+  }
+  $("menos").onclick = () => elegir((real ?? 1) - 1);
+  $("masUno").onclick = () => elegir((real ?? -1) + 1);
+  document.querySelectorAll("[data-luz]").forEach(b => b.onclick = () => {
+    luz = b.dataset.luz; document.querySelectorAll("[data-luz]").forEach(o => o.setAttribute("aria-pressed", String(o === b)));
+  });
+  $("modulo").onchange = cambiarModulo;
+
+  async function cambiarModulo() {
+    lectura = null; pintarLectura();
+    if (canal) { sb.removeChannel(canal); canal = null; }
+    const id = Number($("modulo").value); if (!id) return;
+    await ultimaLectura();
+    canal = sb.channel("prueba-" + id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "registros_ocupacion", filter: `modulo_id=eq.${id}` },
+        p => { lectura = p.new; nuevaLectura(); })
+      .subscribe();
+    pintarResumen();
+  }
+  async function ultimaLectura() {
+    const id = Number($("modulo").value); if (!id) return;
+    const { data } = await sb.from("registros_ocupacion").select("id, fecha_hora, personas, modulo_id")
+      .eq("modulo_id", id).order("fecha_hora", { ascending: false }).limit(1).maybeSingle();
+    if (data && (!lectura || data.id !== lectura.id)) { lectura = data; nuevaLectura(); }
+  }
+  function nuevaLectura() {
+    // Cada lectura nueva pide contar de nuevo: así no se arrastra el número anterior por error.
+    real = null; document.querySelectorAll("#nums button").forEach(b => b.setAttribute("aria-pressed", "false"));
+    $("realTxt").textContent = "Toca un número"; pintarLectura();
+  }
+  function pintarLectura() {
+    const est = $("estado");
+    if (!lectura) {
+      $("detectadas").textContent = "—"; $("lecturaHora").textContent = "Esperando la primera lectura…";
+      est.className = "estado espera"; est.textContent = "Esperando una lectura de la cámara."; $("guardar").disabled = true; return;
+    }
+    const seg = Math.round((Date.now() - new Date(lectura.fecha_hora).getTime()) / 1000);
+    $("detectadas").textContent = lectura.personas;
+    $("lecturaHora").textContent = `Lectura de las ${hora(lectura.fecha_hora)} · hace ${seg < 60 ? seg + " s" : Math.floor(seg / 60) + " min"}`;
+    const ya = registradas.has(lectura.id), vieja = seg > VIEJA_SEG;
+    if (ya) { est.className = "estado espera"; est.textContent = "Ya registraste esta lectura. Espera la siguiente foto."; }
+    else if (vieja) { est.className = "estado vieja"; est.textContent = "Esta lectura es antigua. Espera una foto nueva antes de comparar."; }
+    else { est.className = "estado"; est.textContent = "Cuenta a las personas del módulo ahora y marca el número real."; }
+    $("guardar").disabled = ya || vieja || real === null;
+  }
+
+  $("guardar").onclick = async () => {
+    if (!lectura || real === null) return;
+    $("guardar").disabled = true;
+    const fila = { registro_id: lectura.id, modulo_id: lectura.modulo_id, detectadas: lectura.personas, reales: real, luz, nota: $("nota").value.trim() || null };
+    const { data, error } = await sb.from("pruebas_precision").insert(fila).select().single();
+    if (error) { msg(error.code === "23505" ? "Esa lectura ya estaba registrada." : "No se pudo guardar. Revisa la conexión e intenta de nuevo.", "error"); pintarLectura(); return; }
+    pruebas.unshift(data); registradas.add(data.registro_id);
+    msg(data.detectadas === data.reales ? "Guardado: la cámara acertó." : `Guardado: la cámara detectó ${data.detectadas} y había ${data.reales}.`, "ok");
+    pintarLectura(); pintarResumen();
+  };
+
+  async function cargarPruebas() {
+    const { data, error } = await sb.from("pruebas_precision").select("*").order("creado_en", { ascending: false }).limit(2000);
+    if (error) { msg("No se pudieron cargar las pruebas anteriores.", "error"); return; }
+    pruebas = data || []; registradas = new Set(pruebas.map(p => p.registro_id));
+  }
+  function medidas(lista) {
+    const n = lista.length; if (!n) return null;
+    const aciertos = lista.filter(p => p.detectadas === p.reales).length;
+    const mae = lista.reduce((a, p) => a + Math.abs(p.detectadas - p.reales), 0) / n;
+    const sesgo = lista.reduce((a, p) => a + (p.detectadas - p.reales), 0) / n;
+    return { n, acierto: 100 * aciertos / n, mae, sesgo };
+  }
+  const fmt = (v, d = 2) => v.toLocaleString("es-CO", { minimumFractionDigits: d, maximumFractionDigits: d });
+  function pintarResumen() {
+    const id = Number($("modulo").value);
+    const lista = pruebas.filter(p => p.modulo_id === id), m = medidas(lista);
+    const kpi = (v, t) => `<div class="kpi"><b>${v}</b><span>${t}</span></div>`;
+    $("kpis").innerHTML = kpi(m ? m.n : 0, "comparaciones") + kpi(m ? Math.round(m.acierto) + " %" : "—", "acierto exacto")
+      + kpi(m ? fmt(m.mae) : "—", "error medio (personas)");
+    $("porLuz").innerHTML = ["encendida", "apagada"].map(l => {
+      const r = medidas(lista.filter(p => p.luz === l));
+      return `<tr><td>${l === "encendida" ? "Prendida" : "Apagada"}</td><td>${r ? r.n : 0}</td><td>${r ? Math.round(r.acierto) + " %" : "—"}</td><td>${r ? fmt(r.mae) : "—"}</td></tr>`;
+    }).join("") + (m ? `<tr><td colspan="4" style="font-size:12px;color:var(--muted)">${m.sesgo > 0.05 ? "En promedio la cámara cuenta de más (" + fmt(m.sesgo) + ")" : m.sesgo < -0.05 ? "En promedio la cámara cuenta de menos (" + fmt(-m.sesgo) + ")" : "La cámara no tiende a contar de más ni de menos"}</td></tr>` : "");
+    const cuerpo = $("ultimas"); cuerpo.innerHTML = "";
+    lista.slice(0, 12).forEach(p => {
+      const tr = document.createElement("tr"), ok = p.detectadas === p.reales;
+      tr.innerHTML = `<td>${hora(p.creado_en)}</td><td>${p.luz === "encendida" ? "Prendida" : "Apagada"}</td><td>${p.detectadas}</td><td class="${ok ? "bien" : "malo"}">${p.reales}</td><td></td>`;
+      const b = document.createElement("button"); b.className = "borrar"; b.type = "button"; b.textContent = "Borrar";
+      b.onclick = async () => {
+        if (!confirm("¿Borrar esta comparación? Úsalo solo si la anotaste mal.")) return;
+        const { error } = await sb.from("pruebas_precision").delete().eq("id", p.id);
+        if (error) { msg("No se pudo borrar.", "error"); return; }
+        pruebas = pruebas.filter(x => x.id !== p.id); registradas.delete(p.registro_id); pintarResumen(); pintarLectura();
+      };
+      tr.lastChild.append(b); cuerpo.append(tr);
+    });
+    if (!lista.length) cuerpo.innerHTML = '<tr><td colspan="5" style="color:var(--muted)">Aún no hay comparaciones en este módulo.</td></tr>';
+  }
+  $("csv").onclick = () => {
+    const filas = [["fecha_hora", "modulo_id", "luz", "detectadas", "reales", "diferencia", "acierto", "nota"]]
+      .concat([...pruebas].reverse().map(p => [new Date(p.creado_en).toLocaleString("es-CO", { timeZone: "America/Bogota" }), p.modulo_id, p.luz, p.detectadas, p.reales, p.detectadas - p.reales, p.detectadas === p.reales ? "si" : "no", (p.nota || "").replace(/"/g, "'")]));
+    const csv = "﻿" + filas.map(f => f.map(v => `"${v}"`).join(";")).join("\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    a.download = "pruebas_precision.csv"; a.click(); URL.revokeObjectURL(a.href);
+  };
+  iniciar();
+</script>
+</body>
+</html>
