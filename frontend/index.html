@@ -524,6 +524,7 @@
   </nav>
 
 
+  <script src="/assets/festivos.js"></script>
   <script>
     // La clave Publishable/anon está diseñada para el navegador. No insertar service_role ni secret.
     const API_BASE_URL = "https://proyecto-tutoria-wu98.onrender.com";
@@ -570,8 +571,10 @@
       return { dia: { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }[p.weekday], min: Number(p.hour) * 60 + Number(p.minute) };
     }
     // Tutorías de hoy en un módulo que aún no terminan, ordenadas por hora.
+    // En los festivos no hay clases, así que tampoco hay tutorías.
     function tutoriasHoy(id) {
       const ahora = ahoraBogota();
+      if (window.Festivos && Festivos.festivo(Festivos.fechaBogota())) return [];
       return tutoriasPublicas.filter(t => String(t.modulo_id) === String(id) && t.dia_semana === ahora.dia && aMinutos(t.hora_fin) > ahora.min)
         .sort((a, b) => aMinutos(a.hora_inicio) - aMinutos(b.hora_inicio));
     }
@@ -610,6 +613,9 @@
         caja.className = "aviso-tut " + a.tipo;
       } else if (masTarde) {
         texto.append(el("strong", "", "Tutorías hoy en este módulo"), document.createTextNode(masTarde.replace("Más tarde hoy: ", "")));
+        caja.className = "aviso-tut hoy";
+      } else if (window.Festivos && Festivos.festivo(Festivos.fechaBogota())) {
+        texto.append(el("strong", "", `Hoy es festivo: ${Festivos.festivo(Festivos.fechaBogota())}`), document.createTextNode("No hay tutorías programadas en los módulos."));
         caja.className = "aviso-tut hoy";
       } else { caja.hidden = true; caja.replaceChildren(); return; }
       caja.innerHTML = icono; caja.append(texto); caja.hidden = false;

@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4"></script>
+  <script src="/assets/festivos.js"></script>
   <style>
     :root{
       --g-950:#0a2b18; --g-900:#0f3a22; --g-800:#16502e; --g-700:#1d6a3b; --g-600:#27854a; --g-100:#e4f2e6; --g-50:#f3f9f3;
@@ -774,8 +775,13 @@
       const ini = aMin(t.hora_inicio), fin = aMin(t.hora_fin);
       let dias = (t.dia_semana - ahora.dia + 7) % 7;
       if (dias === 0 && ahora.min >= fin) dias = 7;
+      // Los festivos no hay clases: la tutoría pasa a la semana siguiente.
+      let saltada = null;
+      while (window.Festivos && Festivos.festivo(Festivos.fechaBogota(dias)) && dias < 60) {
+        saltada = saltada || Festivos.festivo(Festivos.fechaBogota(dias)); dias += 7;
+      }
       const enCurso = dias === 0 && ahora.min >= ini && ahora.min < fin;
-      return { enCurso, faltan: dias * 1440 + ini - ahora.min, dias, ini, fin };
+      return { enCurso, faltan: dias * 1440 + ini - ahora.min, dias, ini, fin, saltada };
     }
     function textoCuando(p) {
       if (p.enCurso) return { titulo: "Ahora", detalle: `En curso hasta ${hora12(p.fin)}` };
@@ -784,6 +790,7 @@
       if (p.faltan < 60) detalle = `En ${p.faltan} min`;
       else if (p.faltan < 1440) { const h = Math.floor(p.faltan / 60), m = p.faltan % 60; detalle = `En ${h} h${m ? " " + m + " min" : ""}`; }
       else detalle = p.dias === 7 ? "En una semana" : `En ${p.dias} días`;
+      if (p.saltada) detalle += ` · la anterior cae en festivo (${p.saltada})`;
       return { titulo, detalle };
     }
 
