@@ -21,3 +21,6 @@ env/
 # Variables de entorno
 .env
 .env.*
+
+# Datos privados de la ESP32-CAM (Wi-Fi y clave del dispositivo)
+firmware/**/secretos.h

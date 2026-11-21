@@ -122,8 +122,9 @@
     .floorplan-canvas{min-width:880px;border:1px solid var(--line-2);border-radius:18px;background:#fbfdfb;overflow:hidden}
     .floor-wing{padding:12px}
     .floor-row{display:grid;gap:8px}
-    .floor-row-north-top{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(0,2.25fr)}
-    .floor-row-north-bottom{grid-template-columns:repeat(3,minmax(0,1fr)) 18px repeat(2,minmax(0,1fr))}
+    .floor-row-north-top{grid-template-columns:repeat(2,minmax(0,1fr)) 18px repeat(2,minmax(0,1fr))}
+    .floor-row-north-top .mod:nth-child(3){grid-column:3 / 6} /* módulo 25: la sala larga */
+    .floor-row-north-bottom{grid-template-columns:repeat(2,minmax(0,1fr)) 18px repeat(2,minmax(0,1fr))}
     .floor-row-south-top{grid-template-columns:repeat(3,minmax(0,1fr)) 18px repeat(3,minmax(0,1fr)) 18px repeat(3,minmax(0,1fr))}
     .floor-row-south-bottom{grid-template-columns:repeat(11,minmax(0,1fr))}
     .floor-access{align-self:stretch;margin:-10px 0;background:repeating-linear-gradient(180deg,#dfeadf 0 6px,#eef5ee 6px 12px);border-left:1px solid #cfdfce;border-right:1px solid #cfdfce}
@@ -423,7 +424,7 @@
 
     <div class="section-head" id="mapa">
       <div><h3>Mapa de módulos</h3><p>Toca un módulo en el plano para ver su sala y su ocupación.</p></div>
-      <span class="tag"><span class="dot ok"></span><span id="buildingMapCount">29 espacios</span></span>
+      <span class="tag"><span class="dot ok"></span><span id="buildingMapCount">27 espacios</span></span>
     </div>
     <section class="panel reveal d1" aria-label="Plano interactivo de módulos">
       <div class="map-body">
@@ -533,10 +534,11 @@
     const SUPABASE_JS_URL = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4";
     const DEFAULT_MODULES = ["1"]; // Respaldo si no se puede leer la tabla modulos de Supabase.
     const FLOOR_LAYOUT = {
-      northTop: ["29", "28", "27", "26"],
-      northBottom: ["25", "24", "23", "22", "21"],
-      southTop: ["20", "19", "18", "17", "16", "15", "14", "13", "12"],
-      southBottom: ["11", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1"]
+      // Numeración real del sótano (27 módulos). El 25 es la sala larga del ala norte.
+      northTop: ["22", "24", "25"],
+      northBottom: ["21", "23", "26", "27"],
+      southTop: ["2", "4", "6", "8", "10", "12", "16", "18", "20"],
+      southBottom: ["1", "3", "5", "7", "9", "11", "13", "14", "15", "17", "19"]
     };
     const FLOOR_LAYOUT_IDS = Object.values(FLOOR_LAYOUT).flat();
     const REFRESH_FALLBACK_MS = 20000;
@@ -785,7 +787,7 @@
       entries.forEach((id,i)=>{
         row.appendChild(createMapRoom(id));
         // Pasos que conectan el pasillo interno con el principal
-        if((containerId==="mapNorthBottom"&&i===2)||(containerId==="mapSouthTop"&&(i===2||i===5))){const a=el("span","floor-access");a.setAttribute("aria-hidden","true");row.appendChild(a)}
+        if((containerId==="mapNorthBottom"&&i===1)||(containerId==="mapSouthTop"&&(i===2||i===5))){const a=el("span","floor-access");a.setAttribute("aria-hidden","true");row.appendChild(a)}
       });
     }
     function renderBuildingMap(){
