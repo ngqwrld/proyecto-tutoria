@@ -538,7 +538,7 @@ bool enviarFoto(camera_fb_t* fb) {
   }
   if (codigo == 422) {
     Serial.printf("[ERROR] El servidor no reconoce el origen \"%s\" (HTTP 422).\n", ORIGEN);
-    Serial.println("        Revisa ORIGEN: debe ser modulo-1, modulo-2, ... modulo-26.");
+    Serial.println("        Revisa ORIGEN: debe ser modulo-1, modulo-2, ... modulo-27.");
     return false;
   }
   if (codigo == 409) {
