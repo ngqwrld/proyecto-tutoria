@@ -45,7 +45,7 @@ String leerLinea(WiFiClientSecure& cliente, unsigned long limite);
 // ============================================================
 
 // Módulo donde está instalada ESTA cámara. Debe coincidir con el
-// origen del módulo en Supabase: "modulo-1", "modulo-2", ..., "modulo-26".
+// origen del módulo en Supabase: "modulo-1", "modulo-2", ..., "modulo-27".
 const char* ORIGEN = "modulo-1";
 
 // Backend en Render (sin https:// y sin / al final)
