@@ -21,6 +21,38 @@ Es el trabajo de grado *«Sistema inteligente de monitoreo en tiempo real para l
 3. **Supabase** guarda cada lectura: el módulo, la hora, las personas y las sillas. También guarda los usuarios del panel, el horario de tutorías y las materias.
 4. **La página web** está suscrita a la base de datos y muestra el cambio apenas llega una lectura nueva, sin recargar.
 
+## El nodo de captura
+
+Cada módulo con cámara tiene un nodo formado por dos placas que encajan una sobre otra:
+
+- **ESP32-CAM (AI Thinker)** con el sensor OV3660: toma la foto y la envía por Wi-Fi.
+- **Base programadora** con puerto USB-C y botones RST e IO0: sirve para cargar el programa desde el computador y para alimentar la placa, que no trae USB propio.
+
+<p align="center">
+  <img src="docs/img/placas.png" alt="ESP32-CAM y base programadora por separado" width="560"><br>
+  <img src="docs/img/placas_unidas.png" alt="ESP32-CAM montada sobre la base programadora" width="300">
+</p>
+
+Para dejarlo funcionando en el módulo se necesita además:
+
+| Elemento | Para qué sirve |
+|---|---|
+| Cable USB | Lleva la energía del cargador a la base |
+| Cargador de 5 V | Alimenta la placa desde el tomacorriente |
+| Extensión eléctrica | Acerca la energía hasta la esquina donde va la cámara |
+| Cinta adhesiva | Sujeta la placa en la esquina y fija el cable a la pared |
+| Celular con punto de acceso | Da internet en 2,4 GHz, porque el Wi-Fi de la universidad no llega al sótano |
+
+Así se conectan la energía y los datos:
+
+<p align="center"><img src="docs/img/conexion.png" alt="Diagrama de conexión de energía y datos del nodo" width="100%"></p>
+
+La placa va arriba en una esquina del módulo, cerca del techo, apuntando en diagonal hacia la mesa para ver las cuatro sillas en una sola toma.
+
+<p align="center"><img src="docs/img/instalacion.jpg" alt="Nodo instalado en la esquina de un módulo" width="420"></p>
+
+> Durante las pruebas el nodo se instaló por sesiones y se retiraba al terminar: el Wi-Fi de la universidad no llega a los módulos y la conexión depende del celular de un integrante.
+
 ## Qué hay en cada carpeta
 
 ```
@@ -38,8 +70,9 @@ proyecto-tutoria/
 │   ├── panel.html               Panel para tutores y administradores (ingreso con código al correo)
 │   ├── assets/festivos.js       Cálculo de los festivos de Colombia
 │   └── vercel.json              Direcciones limpias en Vercel
-└── supabase/
-    └── functions/aviso-camaras/ Función que avisa por correo si una cámara deja de enviar lecturas
+├── supabase/
+│   └── functions/aviso-camaras/ Función que avisa por correo si una cámara deja de enviar lecturas
+└── docs/img/                    Fotos del nodo y diagrama de conexión usados en este README
 ```
 
 ### `backend/`: servidor de análisis
